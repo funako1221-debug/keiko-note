@@ -280,7 +280,31 @@ function blank(){return{settings:{name:"",pin:"1234",perfectPt:10,perfectXp:10,s
 function normalize(o){const b=blank();o=o&&typeof o==="object"?o:{};
   const r=Object.assign(b,o);r.settings=Object.assign(blank().settings,o.settings||{});
   for(const k of["daily","weekly","big","rewards","tickets","adjust","matches"])if(!Array.isArray(r[k]))r[k]=[];
-  for(const k of["days","weeks","bigDone"])if(!r[k]||typeof r[k]!=="object")r[k]={};
+  for(const k of["days","weeks","bigDone"])if(!r[k]||typeof r[k]!=="object"||Array.isArray(r[k]))r[k]={};
+  return sanitize(r)}
+/* 読み込んだデータ（バックアップ・保存データ）を安全な形にそろえる */
+const sid=v=>{const s=String(v??"").replace(/[^A-Za-z0-9_-]/g,"").slice(0,40);return s||uid()};
+const sn=(v,d=0)=>{const n=Math.round(Number(v));return Number.isFinite(n)?n:d};
+const sd=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v))?String(v):today();
+const st=(v,max=200)=>String(v??"").slice(0,max);
+const pair=v=>Array.isArray(v)?[sn(v[0]),sn(v[1])]:null;
+function sanitize(r){const s=r.settings;
+  s.name=st(s.name,24);s.pin=/^\d{4}$/.test(String(s.pin))?String(s.pin):"1234";
+  for(const k of["perfectPt","perfectXp","streakPt","matchPt","ipponPt"])s[k]=Math.max(0,sn(s[k],blank().settings[k]));
+  const goal=g=>({id:sid(g.id),icon:st(g.icon,4),name:st(g.name,60),pt:Math.max(0,sn(g.pt)),xp:Math.max(0,sn(g.xp))});
+  r.daily=r.daily.filter(Boolean).map(goal);r.big=r.big.filter(Boolean).map(goal);
+  r.weekly=r.weekly.filter(Boolean).map(g=>Object.assign(goal(g),{target:Math.max(1,sn(g.target,1))}));
+  r.rewards=r.rewards.filter(Boolean).map(g=>({id:sid(g.id),icon:st(g.icon,4),name:st(g.name,60),cost:Math.max(1,sn(g.cost,1))}));
+  const days={};for(const d in r.days){if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!r.days[d]||typeof r.days[d]!=="object")continue;const o={};for(const k in r.days[d]){const p=pair(r.days[d][k]);if(p)o[k==="_all"?"_all":sid(k)]=p}days[d]=o}r.days=days;
+  const weeks={};for(const w in r.weeks){if(!/^\d{4}-\d{2}-\d{2}$/.test(w)||!r.weeks[w]||typeof r.weeks[w]!=="object")continue;const o={};for(const k in r.weeks[w]){const x=r.weeks[w][k]||{};o[sid(k)]={count:Math.max(0,sn(x.count)),done:pair(x.done)}}weeks[w]=o}r.weeks=weeks;
+  const bd={};for(const k in r.bigDone){const x=r.bigDone[k]||{};bd[sid(k)]={date:sd(x.date),pt:sn(x.pt),xp:sn(x.xp)}}r.bigDone=bd;
+  r.tickets=r.tickets.filter(Boolean).map(t=>({id:sid(t.id),rewardId:sid(t.rewardId),name:st(t.name,60),icon:st(t.icon,4),cost:Math.max(0,sn(t.cost)),date:sd(t.date),used:!!t.used}));
+  r.adjust=r.adjust.filter(Boolean).map(a=>({id:sid(a.id),date:sd(a.date),pt:sn(a.pt),note:st(a.note,80)}));
+  const IP=["メ","コ","ド","ツ","反"];
+  r.matches=r.matches.filter(Boolean).map(m=>({id:sid(m.id),date:sd(m.date),event:st(m.event,60),round:st(m.round,40),opponent:st(m.opponent,40),
+    mine:(Array.isArray(m.mine)?m.mine:[]).filter(x=>IP.includes(x)).slice(0,3),opp:(Array.isArray(m.opp)?m.opp:[]).filter(x=>IP.includes(x)).slice(0,3),
+    result:["win","lose","draw"].includes(m.result)?m.result:"draw",good:st(m.good,400),next:st(m.next,400),award:pair(m.award)}));
+  if(r.lastBackup!==undefined)r.lastBackup=sd(r.lastBackup);
   return r}
 const TEMPLATE={
   daily:[{icon:"振",name:"素振り 100かい",pt:10,xp:10},{icon:"足",name:"足さばき 5分",pt:10,xp:10},{icon:"面",name:"面打ち 30かい",pt:10,xp:10},{icon:"礼",name:"正座・もくそう 1分",pt:5,xp:5}],
