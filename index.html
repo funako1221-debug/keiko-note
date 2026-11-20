@@ -281,6 +281,15 @@ textarea{font:inherit;font-size:16px;padding:9px 10px;border:2px solid var(--lin
 .todaykeiko b{font-family:var(--f-num);font-weight:400;font-size:20px}
 .todaykeiko span{font-weight:900}
 .todaykeiko small{opacity:.85;font-weight:700}
+
+.improws{display:grid;gap:8px;text-align:left;max-height:52vh;overflow:auto;padding:2px}
+.improw{display:flex;gap:8px;align-items:flex-start;border:2px solid var(--line);border-radius:12px;padding:8px}
+.improw.off{opacity:.45}
+.improw .ck input{width:22px;height:22px;margin-top:6px}
+.improw .f{display:flex;flex-wrap:wrap;gap:6px;align-items:center;flex:1;min-width:0}
+.improw .grow{flex:1 1 140px}
+.wdx{font-size:13px;font-weight:700;color:var(--muted)}.wdx.bad{color:var(--shu)}
+.modal.wide{max-width:640px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -486,7 +495,7 @@ function vNote(){const all=[...S.notes].sort((a,b)=>b.date<a.date?-1:b.date>a.da
   const open=all.filter(n=>n.kind!=="praise"&&!n.done),done=all.filter(n=>n.kind!=="praise"&&n.done),praise=all.filter(n=>n.kind==="praise");
   const list=({open,done,praise,all}[noteFilter]||open);
   const f=(k,l,c)=>`<button type="button" class="chip ${noteFilter===k?"on":""}" data-nfilt="${k}">${l}（${c}）</button>`;
-  return `<div class="sec"><h2>カレンダー</h2><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn sub" data-addsched="">＋ 練習の予定</button><button type="button" class="btn" data-addnote>＋ 先生に言われたこと</button></div></div>
+  return `<div class="sec"><h2>カレンダー</h2><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn sub" data-addsched="">＋ 練習の予定</button><button type="button" class="btn sub" data-import>予定表を読みこむ</button><button type="button" class="btn sub" data-share>なかまに予定を送る</button><button type="button" class="btn" data-addnote>＋ 先生に言われたこと</button></div></div>
    <p class="note" style="text-align:left;margin-top:0">日にちをタップして、練習の時間・場所や 先生に言われたことを 入れよう。</p>
    ${todayKeikoHtml()}
    <div class="calwrap">${noteCal()}<div id="dayPanel">${dayPanel()}</div></div>
@@ -517,6 +526,157 @@ function noteDone(id,on,el){const n=S.notes.find(x=>x.id===id);if(!n)return;cons
   if(on){n.done=true;n.doneDate=today();n.award=[S.settings.notePt,S.settings.notePt];sound("coin");if(el)floatAt(el,"+"+S.settings.notePt+"pt")}
   else{n.done=false;n.doneDate="";n.award=null;sound("off")}
   commit();afterChange(before,()=>{if(on){confetti();modal(`<div class="big-num">+${S.settings.notePt}pt</div><h3>できるようになった！</h3><p>${esc(n.text)}</p><div class="acts"><button class="btn" data-close>やったね！</button></div>`)}})}
+/* ---------- schedule import (PDF / pasted text) ---------- */
+/* 予定表は端末の中だけで読み取る。先生の名前・電話・住所・URLは取りこまない */
+const PDFJS="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+let pdfjsP=null;
+function loadPdfJs(){if(window.pdfjsLib)return Promise.resolve(window.pdfjsLib);
+  if(!pdfjsP)pdfjsP=new Promise((ok,ng)=>{const s=document.createElement("script");s.src=PDFJS+"pdf.min.js";s.onload=()=>{try{window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+"pdf.worker.min.js";ok(window.pdfjsLib)}catch(e){ng(e)}};s.onerror=()=>{pdfjsP=null;ng(new Error("load"))};document.head.appendChild(s)});
+  return pdfjsP}
+const RADICAL={"⺠":"民","⻄":"西","⻑":"長","⻘":"青","⻝":"食","⻤":"鬼","⻩":"黄","⻁":"虎","⻨":"麦","⻌":"辶","⻂":"衤","⺟":"母","⺣":"火"};
+const NK=s=>String(s||"").normalize("NFKC").replace(/[⺀-⻿]/g,c=>RADICAL[c]||c);
+async function pdfToText(file){const lib=await loadPdfJs();const doc=await lib.getDocument({data:await file.arrayBuffer()}).promise;const out=[];
+  for(let p=1;p<=Math.min(doc.numPages,6);p++){const page=await doc.getPage(p);const vp=page.getViewport({scale:1});const tc=await page.getTextContent();
+    const raw=tc.items.filter(i=>i.str&&i.str.trim()).map(i=>({s:NK(i.str),x:i.transform[4],y:i.transform[5],w:i.width||0,h:Math.abs(i.transform[3])||i.height||10}));
+    /* 細切れの文字を、同じ行で すき間のないものどうし つなげて「セル」にする */
+    const byY=[];for(const it of [...raw].sort((a,b)=>b.y-a.y||a.x-b.x)){const r=byY.find(r=>Math.abs(r.y-it.y)<=Math.max(2,it.h*0.25));if(r)r.items.push(it);else byY.push({y:it.y,items:[it]})}
+    const items=[];for(const r of byY){const L=r.items.sort((a,b)=>a.x-b.x);let c=null;
+      for(const it of L){if(c&&it.x-(c.x+c.w)<Math.max(3,it.h*0.9)){c.s+=it.s;c.w=it.x+it.w-c.x}else{if(c)items.push(c);c={s:it.s,x:it.x,y:r.y,w:it.w,h:it.h}}}if(c)items.push(c)}
+    for(const it of items)it.s=it.s.replace(/\s+/g," ").trim();
+    const lineup=list=>{const L=[...list].sort((a,b)=>b.y-a.y||a.x-b.x);const rows=[];for(const it of L){const r=rows.find(r=>Math.abs(r.y-it.y)<=3);if(r)r.items.push(it);else rows.push({y:it.y,items:[it]})}
+      return rows.map(r=>r.items.sort((a,b)=>a.x-b.x).map(i=>i.s).join(" "))};
+    const marks=items.filter(i=>/^\d{1,2}\s*日$/.test(i.s)&&i.x<vp.width*0.3).sort((a,b)=>b.y-a.y);
+    if(marks.length<3){out.push(...lineup(items));continue}
+    const gaps=marks.slice(1).map((m,i)=>marks[i].y-m.y).filter(g=>g>2).sort((a,b)=>a-b);const g=gaps.length?gaps[0]:20;const lim=Math.max(g*1.1,12);
+    const groups=marks.map(m=>({m,items:[]}));const head=[];
+    for(const it of items){if(marks.includes(it))continue;let best=null,bd=1e9;for(const gr of groups){const d=Math.abs(gr.m.y-it.y);if(d<bd){bd=d;best=gr}}
+      if(it.y>marks[0].y+lim)head.push(it);else if(bd<=lim)best.items.push(it)}
+    out.push(...lineup(head));
+    for(const gr of groups){out.push(gr.m.s.replace(/\s/g,""));out.push(...lineup(gr.items))}
+    out.push("※")}
+  return out.join("\n")}
+const FAC=/(体育館|小学校|中学校|高校|学校|道場|武道|センター|殿|署|庁舎|公園|会館|ホール|館|コート|アリーナ|スポーツ|グラウンド|ジム|市民|区民|体育室|武道場)/;
+const WDRE=/\((月|火|水|木|金|土|日)(曜日?)?\)?|\(祝[^)]*\)/;
+const TIME_RE=/(\d{1,2}):(\d{2})\s*[~\-ー〜‐-―−－〜～]\s*(\d{1,2}):(\d{2})/g;
+const SKIP_RE=/(https?:|www\.|@|\d{2,4}-\d{2,4}-\d{3,4}|〒|番地|丁目|振込|URL|ホームページ)/i;
+function collapseCJK(s){let p;do{p=s;s=s.replace(/([぀-ヿ一-鿿])\s(?=[぀-ヿ一-鿿](?:\s|$))/g,"$1")}while(s!==p);return s}
+function detectYM(text){const t=NK(text);let m;
+  if((m=t.match(/令和\s*(\d{1,2})\s*年(度)?\s*(\d{1,2})\s*月/))){let y=2018+Number(m[1]);const mo=Number(m[3]);if(m[2]&&mo<=3)y++;return[y,mo]}
+  if((m=t.match(/(20\d{2})\s*年(度)?\s*(\d{1,2})\s*月/))){let y=Number(m[1]);const mo=Number(m[3]);if(m[2]&&mo<=3)y++;return[y,mo]}
+  if((m=t.match(/(20\d{2})[\/.\-](\d{1,2})[\/.\-]\d{1,2}/)))return[Number(m[1]),Number(m[2])];
+  if((m=t.match(/(\d{1,2})\s*月/))){const d=new Date();let y=d.getFullYear();const mo=Number(m[1]);if(mo<d.getMonth()+1-6)y++;return[y,mo]}
+  return null}
+function parseSched(text){const lines=NK(text).split(/\r?\n/).map(l=>collapseCJK(l.replace(/\s+/g," ").trim())).filter(Boolean);
+  const ctxs=[];let cur=null;
+  for(let line of lines){
+    if(/^[※★◇◆■●]/.test(line)){cur=null;continue}
+    if(SKIP_RE.test(line)){continue}
+    let m,rest=line;
+    if((m=line.match(/^(\d{1,2})\s*[\/月]\s*(\d{1,2})\s*日?/))){cur={mo:Number(m[1]),d:Number(m[2]),wd:"",rows:[],place:[],event:[]};ctxs.push(cur);rest=line.slice(m[0].length)}
+    else if((m=line.match(/^(\d{1,2})\s*日/))){cur={mo:0,d:Number(m[1]),wd:"",rows:[],place:[],event:[]};ctxs.push(cur);rest=line.slice(m[0].length)}
+    if(!cur)continue;
+    const w=rest.match(WDRE);if(w&&!cur.wd)cur.wd=w[1]||"祝";rest=rest.replace(WDRE," ");
+    let prev=0,hasTime=false,left="";TIME_RE.lastIndex=0;
+    while((m=TIME_RE.exec(rest))){hasTime=true;const seg=rest.slice(prev,m.index);
+      const lab=(seg.match(/([^\s:]{1,12})\s*:?\s*$/)||[])[1]||"";const label=lab.replace(/[():]/g,"").trim();
+      left+=" "+seg.slice(0,seg.length-lab.length-0);
+      const isPl=FAC.test(label)&&!/(生|以上|以下|部|全員|一般|大人|子ども|幼児|年|クラス)/.test(label);
+      cur.rows.push({start:pad2(Number(m[1]))+":"+m[2],end:pad2(Number(m[3]))+":"+m[4],label:isPl?"":label});
+      if(isPl)cur.place.push(label);
+      prev=m.index+m[0].length}
+    left+=" "+rest.slice(prev);
+    let stop=false;
+    for(let tk of left.split(" ")){tk=tk.replace(/^[:\-]+|[:\-]+$/g,"").trim();if(!tk)continue;
+      if(tk.startsWith("※")){stop=true}if(stop)continue;
+      if(/^\(.*\)$/.test(tk)){const inner=tk.slice(1,-1);if(/全員|全体/.test(inner)){cur.label=inner;continue}if(FAC.test(inner)||inner.length<=8){cur.place.push(tk)}continue}
+      if(FAC.test(tk)&&!/・/.test(tk)){cur.place.push(tk);continue}
+      if(/・/.test(tk)||/^\d+$/.test(tk))continue;
+      if(!hasTime&&tk.length>=2&&tk.length<=20&&!/先生|当番|参加者|受験者/.test(tk))cur.event.push(tk)}}
+  const rows=[];
+  for(const c of ctxs){const place=[...new Set(c.place)].join(" ").slice(0,60);
+    if(c.rows.length){for(const r of c.rows)rows.push({mo:c.mo,d:c.d,wd:c.wd,start:r.start,end:r.end,label:r.label||c.label||"",place,note:""})}
+    else if(c.event.length||place)rows.push({mo:c.mo,d:c.d,wd:c.wd,start:"",end:"",label:"",place,note:c.event.join(" ").slice(0,40)})}
+  return rows}
+const ADULT=/高校|一般|大人|成人|以上|社会人|青年/;
+function openImport(){
+  modal(`<h3>予定表を読みこむ</h3><p>道場の予定表（PDF）をえらぶか、LINE などの予定の文章を貼りつけてください。</p>
+   <div class="acts"><label class="btn" for="impFile" style="cursor:pointer">PDFをえらぶ</label><input type="file" id="impFile" accept="application/pdf,.pdf" hidden></div>
+   <label style="text-align:left;font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px">または 文章を貼りつけ<textarea id="impText" style="min-height:120px" placeholder="れい：&#10;12月6日(土) 18:00〜19:30 〇〇小学校&#10;12月7日(日) 10:00〜12:00 市民体育館"></textarea></label>
+   <p id="impMsg" style="margin:0;min-height:1.2em;color:var(--shu)"></p>
+   <p style="font-size:12px;margin:0">読みとりは この端末の中だけで行います。先生の名前・電話番号・住所などは取りこみません。写真やスクリーンショットは読めないので、PDFか文章でお願いします。</p>
+   <div class="acts"><button type="button" class="btn sub" data-close>やめる</button><button type="button" class="btn" id="impGo">文章を読みとる</button></div>`,
+  m=>{const msg=t=>m.querySelector("#impMsg").textContent=t;
+    m.querySelector("#impGo").onclick=()=>{const t=m.querySelector("#impText").value;if(!t.trim()){msg("文章を貼りつけてね");return}
+      const sh=decodeShare(t);if(sh){reviewImport("",sh.rows,sh.t);return}if(/KEIKO1:/.test(t)){msg("予定コードが こわれているようです。もう一度コピーしてね");return}reviewImport(t)};
+    m.querySelector("#impFile").onchange=async e=>{const f=e.target.files[0];if(!f)return;
+      if(!/pdf$/i.test(f.type)&&!/\.pdf$/i.test(f.name)){msg("PDFファイルをえらんでください");return}
+      msg("読みとり中…");try{const t=await pdfToText(f);if(!t.replace(/[\s※]/g,"")){msg("文字が見つかりませんでした。写真をPDFにしたものは読めません");return}reviewImport(t)}
+      catch(err){msg(err&&err.message==="load"?"読みとりの部品を読みこめませんでした。ネットにつないでもう一度ためしてね":"このPDFは読めませんでした")}}})}
+function reviewImport(text,pre,title){let ym=pre&&pre.length?[parse(pre[0].fixed).getFullYear(),parse(pre[0].fixed).getMonth()+1]:detectYM(text);if(!ym){const d=new Date();ym=[d.getFullYear(),d.getMonth()+1]}
+  const raw=pre||parseSched(text);
+  if(!raw.length){toast("予定が見つかりませんでした");return}
+  const labels=[...new Set(raw.map(r=>r.label).filter(Boolean))];const on={};for(const l of labels)on[l]=!ADULT.test(l);
+  const rows=raw.map(r=>Object.assign({use:true},r));
+  const dateOf=r=>{if(r.fixed)return r.fixed;const mo=r.mo||ym[1];let y=ym[0];if(r.mo&&r.mo<ym[1]-6)y++;const dt=new Date(y,mo-1,r.d);return dt.getMonth()===mo-1?ymd(dt):""};
+  for(const r of rows){r.date=dateOf(r);if(!r.date)r.use=false;
+    if(S.schedule.some(x=>occurs(x,r.date)&&x.start===r.start))r.use=false,r.dup=true}
+  const inp='style="font:inherit;font-size:14px;padding:6px;border:2px solid var(--line);border-radius:8px;min-width:0"';
+  const draw=m=>{const vis=rows.filter(r=>!r.label||on[r.label]);
+    m.querySelector("#impRows").innerHTML=vis.map(r=>{const i=rows.indexOf(r);const wd=r.date?WD[parse(r.date).getDay()]:"";const bad=r.wd&&r.wd!=="祝"&&wd&&r.wd!==wd;
+      return `<div class="improw ${r.use?"":"off"}"><label class="ck"><input type="checkbox" data-iu="${i}" ${r.use?"checked":""}></label>
+       <div class="f"><input type="date" data-if="${i}:date" value="${r.date}" ${inp}><span class="wdx ${bad?"bad":""}">${wd?"("+wd+")":""}${bad?" 曜日がちがう？":""}${r.dup?" 登録ずみ":""}</span>
+       <input type="time" data-if="${i}:start" value="${r.start}" ${inp}><span>〜</span><input type="time" data-if="${i}:end" value="${r.end}" ${inp}>
+       <input type="text" data-if="${i}:place" value="${esc(r.place)}" placeholder="場所" ${inp} class="grow"><input type="text" data-if="${i}:note" value="${esc(r.note)}" placeholder="メモ" ${inp} class="grow"></div></div>`}).join("");
+    m.querySelector("#impCount").textContent=vis.filter(r=>r.use&&r.date).length};
+  modal(`<h3>${pre?"送られてきた予定":"読みとった予定"}</h3>${title?`<p style="color:var(--ai);font-weight:900">${esc(title)}</p>`:""}<p>まちがいを直して、入れる予定にチェックをつけてください。</p>
+   <div class="row" style="justify-content:center" ${pre?"hidden":""}><label style="font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px;text-align:left">何年何月の予定表？<input type="month" id="impYM" value="${ym[0]}-${pad2(ym[1])}" style="font:inherit;padding:8px;border:2px solid var(--line);border-radius:10px"></label></div>
+   ${labels.length?`<div style="text-align:left"><div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px">入れる時間わく（子どもの部だけ えらんでね）</div><div class="chips">${labels.map(l=>`<button type="button" class="chip red ${on[l]?"on":""}" data-il="${esc(l)}">${esc(l)}</button>`).join("")}</div></div>`:""}
+   <div id="impRows" class="improws"></div>
+   <div class="acts"><button type="button" class="btn sub" data-close>やめる</button><button type="button" class="btn" id="impSave"><span id="impCount">0</span>件を カレンダーに入れる</button></div>`,
+  m=>{m.classList.add("wide");draw(m);
+    m.querySelector("#impYM").onchange=e=>{const v=e.target.value.split("-").map(Number);if(v.length===2&&v[0]){ym=v;for(const r of rows){r.date=dateOf(r);r.dup=false}draw(m)}};
+    m.querySelectorAll("[data-il]").forEach(b=>b.onclick=()=>{const l=b.dataset.il;on[l]=!on[l];b.classList.toggle("on",on[l]);draw(m)});
+    m.querySelector("#impRows").addEventListener("change",e=>{const t=e.target;
+      if(t.dataset.iu!==undefined){rows[t.dataset.iu].use=t.checked;t.closest(".improw").classList.toggle("off",!t.checked)}
+      if(t.dataset.if){const[i,f]=t.dataset.if.split(":");rows[i][f]=t.value.trim();if(f==="date")draw(m)}
+      m.querySelector("#impCount").textContent=rows.filter(r=>(!r.label||on[r.label])&&r.use&&r.date).length});
+    m.querySelector("#impSave").onclick=()=>{const add=rows.filter(r=>(!r.label||on[r.label])&&r.use&&r.date);if(!add.length){toast("入れる予定がありません");return}
+      const tm=v=>/^\d{2}:\d{2}$/.test(v)?v:"";
+      for(const r of add)S.schedule.push({id:uid(),date:r.date,start:tm(r.start),end:tm(r.end),place:r.place.slice(0,60),note:r.note.slice(0,80),repeat:"none",until:"",skips:[]});
+      selDay=add[0].date;noteMonth=[parse(add[0].date).getFullYear(),parse(add[0].date).getMonth()];commit();closeModal();sound("coin");toast(add.length+"件の予定を入れました")}})}
+
+/* ---------- share schedule (no server): link / code ---------- */
+const b64e=str=>{const b=new TextEncoder().encode(str);let s="";for(const c of b)s+=String.fromCharCode(c);return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")};
+const b64d=str=>{const s=atob(str.replace(/-/g,"+").replace(/_/g,"/"));return new TextDecoder().decode(Uint8Array.from(s,c=>c.charCodeAt(0)))};
+function makeShare(title,items){return "KEIKO1:"+b64e(JSON.stringify({t:title.slice(0,40),s:items.map(x=>[x.date,x.start,x.end,x.place,x.note])}))}
+function decodeShare(text){const m=String(text).match(/KEIKO1:([A-Za-z0-9_-]{8,})/);if(!m)return null;
+  try{const o=JSON.parse(b64d(m[1]));if(!o||!Array.isArray(o.s))return null;const okd=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v));const okt=v=>/^\d{2}:\d{2}$/.test(String(v))?String(v):"";
+    const rows=o.s.filter(a=>Array.isArray(a)&&okd(a[0])).slice(0,120).map(a=>{const d=parse(a[0]);return{fixed:a[0],mo:d.getMonth()+1,d:d.getDate(),wd:"",start:okt(a[1]),end:okt(a[2]),label:"",place:String(a[3]||"").slice(0,60),note:String(a[4]||"").slice(0,80)}});
+    return rows.length?{t:String(o.t||"").slice(0,40),rows}:null}catch(e){return null}}
+const canLink=()=>/^https:$/.test(location.protocol)&&/github\.io$/.test(location.hostname);
+function shareSchedule(){
+  const months=[...new Set(S.schedule.flatMap(it=>{const out=[];const t=today();for(let i=-31;i<120;i++){const d=addDays(t,i);if(occurs(it,d))out.push(d.slice(0,7))}return out}))].sort();
+  if(!months.length){toast("まだ練習の予定がありません");return}
+  const def=months.find(x=>x>=today().slice(0,7))||months[months.length-1];
+  const itemsFor=ym=>{const [y,m]=ym.split("-").map(Number);const dim=new Date(y,m,0).getDate();const out=[];
+    for(let d=1;d<=dim;d++){const s=ym+"-"+pad2(d);for(const it of schedOn(s))out.push({date:s,start:it.start,end:it.end,place:it.place,note:it.note})}return out};
+  modal(`<h3>教室のなかまに 予定を送る</h3><p>練習日・時間・場所・メモだけを送ります。先生メモや記録は送りません。</p>
+   <div class="fgrid"><label>どの月？<select id="shM" style="font:inherit;font-size:16px;padding:9px;border:2px solid var(--line);border-radius:10px">${months.map(x=>`<option value="${x}" ${x===def?"selected":""}>${x.replace("-","年")}月</option>`).join("")}</select></label>
+    <label>なんの予定？（相手に表示されます）<input type="text" id="shT" maxlength="40" placeholder="れい：〇〇剣道教室 12月の練習"></label>
+    <p id="shInfo" style="margin:0;font-weight:700;color:var(--ai)"></p></div>
+   <div class="acts">${canLink()?`<button type="button" class="btn" id="shLink">リンクをコピー</button>`:""}<button type="button" class="btn ${canLink()?"sub":""}" id="shCode">予定コードをコピー</button></div>
+   <p style="font-size:12px;margin:0">${canLink()?"リンクを LINE などで送ると、相手が開くだけで自分のカレンダーに入れられます。":"予定コードを送ると、相手は「予定表を読みこむ」に貼りつけて入れられます。"}</p>
+   <div class="acts"><button type="button" class="btn sub" data-close>とじる</button></div>`,
+  m=>{const info=()=>{const n=itemsFor(m.querySelector("#shM").value).length;m.querySelector("#shInfo").textContent=n+"件の練習を送ります"};info();m.querySelector("#shM").onchange=info;
+    const get=()=>makeShare(m.querySelector("#shT").value.trim(),itemsFor(m.querySelector("#shM").value));
+    const copy=t=>{const fb=()=>showCode(t);if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(()=>toast("コピーしました。LINE などに貼りつけて送ってね"),fb);else fb()};
+    const L=m.querySelector("#shLink");if(L)L.onclick=()=>copy(location.origin+location.pathname+"#"+get().replace("KEIKO1:","s="));
+    m.querySelector("#shCode").onclick=()=>copy(get())})}
+function checkShareHash(){const h=location.hash;if(!/^#s=/.test(h))return false;
+  const sh=decodeShare("KEIKO1:"+h.slice(3));try{history.replaceState(null,"",location.pathname+location.search)}catch(e){}
+  if(!sh){toast("予定のリンクが こわれているようです");return false}
+  tab="note";render();reviewImport("",sh.rows,sh.t);return true}
+
 /* ---------- matches ---------- */
 const IPPON=[["メ","面"],["コ","小手"],["ド","胴"],["ツ","突き"],["反","反則"]];
 const RES={win:"勝ち",lose:"負け",draw:"引き分け"};
@@ -709,7 +869,7 @@ function firstRun(){
   m=>{m.querySelector("#fr-ok").onclick=()=>{const name=m.querySelector("#fr-name").value.trim(),pin=m.querySelector("#fr-pin").value.trim();
       if(!/^\d{4}$/.test(pin)){m.querySelector("#fr-msg").textContent="あんしょう番号は4けたの数字で入れてください";return}
       S=freshState(name,pin,m.querySelector("#fr-tpl").checked);commit();closeModal();
-      modal(`<h3>じゅんび できました！</h3><p>自主練がおわったら「きょう」のカードをタッチしよう。<br>目標やごほうびは「おうちの人」→「せってい」で変えられます。</p><p style="font-size:13px">ホーム画面に追加すると アプリのように使えます（共有ボタン →「ホーム画面に追加」）。</p><div class="acts"><button class="btn" data-close>はじめる</button></div>`)};
+      modal(`<h3>じゅんび できました！</h3><p>自主練がおわったら「きょう」のカードをタッチしよう。<br>目標やごほうびは「おうちの人」→「せってい」で変えられます。</p><p style="font-size:13px">ホーム画面に追加すると アプリのように使えます（共有ボタン →「ホーム画面に追加」）。</p><div class="acts"><button class="btn" data-close id="frDone">はじめる</button></div>`,mm=>{mm.querySelector("#frDone").addEventListener("click",()=>setTimeout(checkShareHash,50))})};
     m.querySelector("#fr-restore").onclick=()=>restoreMenu(true)},true)}
 function exportText(){return JSON.stringify({app:"keiko-note",v:1,exportedAt:new Date().toISOString(),data:S})}
 function importText(t){let o;try{o=JSON.parse(String(t).trim())}catch(e){return false}
@@ -767,6 +927,8 @@ function editDay(date){const day=S.days[date]||{};
 document.addEventListener("click",e=>{const t=e.target.closest("button,[data-editday],[data-nday]");if(!t)return;const d=t.dataset;
   if(d.tab){tab=d.tab;render();scrollTo({top:0});return}
   if(d.addmatch!==undefined){editMatch(null);return}
+  if(d.import!==undefined){openImport();return}
+  if(d.share!==undefined){shareSchedule();return}
   if(d.addnote!==undefined){editNote(null,d.addnote||null);return}
   if(d.addsched!==undefined){editSched(null,d.addsched||null);return}
   if(d.editsched){editSched(d.editsched,d.on||null);return}
@@ -812,7 +974,8 @@ let lastDay=today();setInterval(()=>{if(today()!==lastDay){lastDay=today();rende
 db=null;ref=null;
 const stored=lsLoad();
 $("#saveNote").textContent="記録はこの端末の中だけに保存されます。ときどき「せってい」からバックアップしてください。";
-if(stored){S=normalize(stored);loaded=true;render()}else{loaded=true;render();firstRun()}
+if(stored){S=normalize(stored);loaded=true;render();checkShareHash()}else{loaded=true;render();firstRun()}
+addEventListener("hashchange",()=>{if(lsLoad())checkShareHash()});
 try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
 if("serviceWorker" in navigator&&location.protocol==="https:"){navigator.serviceWorker.register("sw.js").catch(()=>{})}
 })();
