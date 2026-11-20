@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>けいこノート</title>
+<meta name="description" content="剣道の自主練を見える化する、子ども向けの目標・ポイント・連続記録アプリ">
+<meta name="theme-color" content="#1d3461">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="けいこノート">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
+<style>
+/* Layout: 道場の掲示板。左に「じぶんの強さ」(Lv・れんぞく・ポイント)、右に今日の稽古カード。下に大きなタブ。 */
+:root{
+  --ai:#1d3461;        /* 藍：剣道着 */
+  --ai-soft:#e4eaf5;
+  --ai-mid:#4b6aa3;
+  --shu:#d9412b;       /* 朱：はんこ・れんぞく */
+  --kin:#e8a317;       /* 金：ポイント */
+  --kin-soft:#fff3d6;
+  --bg:#f3f5f9;
+  --card:#ffffff;
+  --ink:#1b2333;
+  --muted:#6a7488;
+  --line:#d8deea;
+  --ok:#2f8f5b;
+  --f-body:"Zen Maru Gothic","Hiragino Maru Gothic ProN","Yu Gothic",sans-serif;
+  --f-num:"Dela Gothic One","Zen Maru Gothic",sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+:root{padding-top:env(safe-area-inset-top,0px)}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-weight:500;font-size:17px;
+  -webkit-tap-highlight-color:transparent;}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--kin);outline-offset:2px}
+.wrap{max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px 120px}
+header.top{display:flex;align-items:center;gap:12px;justify-content:space-between;margin-bottom:14px}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand .mon{width:44px;height:44px;border-radius:50%;background:var(--ai);color:#fff;display:grid;place-items:center;font-family:var(--f-num);font-size:20px;flex:none}
+.brand h1{margin:0;font-size:22px;font-weight:900;letter-spacing:.04em;text-wrap:balance}
+.brand small{display:block;color:var(--muted);font-size:13px;font-weight:700}
+.gear{display:flex;align-items:center;gap:6px;padding:10px 14px;border-radius:999px;background:var(--card);border:2px solid var(--line);font-weight:700;font-size:14px;color:var(--muted)}
+.gear.on{background:var(--ai);border-color:var(--ai);color:#fff}
+.note{font-size:13px;color:var(--muted);text-align:center;margin:6px 0 10px}
+
+/* status */
+.home{display:grid;gap:16px}
+@media(min-width:820px){.home{grid-template-columns:330px 1fr;align-items:start}}
+.status{display:grid;gap:12px}
+@media(min-width:560px) and (max-width:819px){.status{grid-template-columns:1fr 1fr}.status .lvcard{grid-column:1/-1}}
+.panel{background:var(--card);border-radius:20px;padding:16px;border:2px solid var(--line)}
+.lvcard{background:var(--ai);color:#fff;border:0;position:relative;overflow:hidden}
+.lvcard::after{content:"";position:absolute;right:-40px;top:-40px;width:150px;height:150px;border-radius:50%;border:18px solid rgba(255,255,255,.07)}
+.lvrow{display:flex;align-items:center;gap:14px}
+.lvbadge{width:84px;height:84px;border-radius:50%;background:#fff;color:var(--ai);display:grid;place-items:center;text-align:center;flex:none;box-shadow:0 0 0 5px var(--kin)}
+.lvbadge b{font-family:var(--f-num);font-size:34px;line-height:1;font-weight:400}
+.lvbadge span{font-size:12px;font-weight:900;display:block;margin-top:-2px}
+.lvtitle{font-size:20px;font-weight:900}
+.lvsub{font-size:13px;opacity:.8;margin-top:2px}
+.xpbar{height:18px;border-radius:999px;background:rgba(255,255,255,.18);margin-top:14px;overflow:hidden}
+.xpbar i{display:block;height:100%;background:linear-gradient(90deg,var(--kin),#ffd36a);border-radius:999px;transition:width .6s}
+.xptext{display:flex;justify-content:space-between;font-size:13px;margin-top:6px;opacity:.9}
+.streak{display:flex;align-items:center;gap:14px}
+.flame{width:62px;height:62px;flex:none;position:relative}
+.flame svg{width:100%;height:100%}
+.streak .num{font-family:var(--f-num);font-size:40px;line-height:1;color:var(--shu)}
+.streak .num small{font-family:var(--f-body);font-size:16px;font-weight:900;color:var(--ink)}
+.streak .msg{font-size:14px;color:var(--muted);font-weight:700;margin-top:4px}
+.streak.cold .num{color:var(--muted)}
+.points{display:flex;align-items:center;gap:14px;background:var(--kin-soft);border-color:#f3d48a}
+.coin{width:56px;height:56px;border-radius:50%;background:var(--kin);color:#fff;display:grid;place-items:center;font-family:var(--f-num);font-size:22px;flex:none;box-shadow:inset 0 -4px 0 rgba(0,0,0,.15)}
+.points .num{font-family:var(--f-num);font-size:38px;line-height:1;color:#a86b00}
+.points .num small{font-family:var(--f-body);font-size:16px;font-weight:900}
+.points .lbl{font-size:14px;font-weight:700;color:#8a6510}
+
+/* section heads */
+.sec{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:4px 2px 10px;flex-wrap:wrap}
+.sec h2{margin:0;font-size:22px;font-weight:900}
+.sec .meta{font-size:15px;font-weight:700;color:var(--muted)}
+.sec .meta b{font-family:var(--f-num);font-weight:400;color:var(--ai);font-size:20px}
+
+/* goal cards */
+.goals{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+.goal{position:relative;display:flex;align-items:center;gap:14px;text-align:left;background:var(--card);border:3px solid var(--line);border-radius:20px;padding:16px;min-height:96px;transition:transform .12s,border-color .2s,background .2s;width:100%}
+.goal:active{transform:scale(.97)}
+.goal .ic{width:56px;height:56px;border-radius:16px;background:var(--ai-soft);color:var(--ai);display:grid;place-items:center;font-size:28px;font-weight:900;flex:none}
+.goal .tx{min-width:0;flex:1}
+.goal .nm{font-size:19px;font-weight:900;line-height:1.3}
+.goal .rw{font-size:14px;color:var(--muted);font-weight:700;margin-top:4px}
+.goal .rw .p{color:#a86b00}
+.goal.done{border-color:var(--shu);background:#fff6f4}
+.goal.done .ic{background:var(--shu);color:#fff}
+.hanko{position:absolute;right:10px;top:50%;width:64px;height:64px;margin-top:-32px;border:4px solid var(--shu);border-radius:50%;color:var(--shu);display:grid;place-items:center;font-weight:900;font-size:15px;line-height:1.05;text-align:center;transform:rotate(-14deg);opacity:0;pointer-events:none;background:rgba(255,255,255,.6)}
+.goal.done .hanko{opacity:.92;animation:stamp .35s ease-out}
+.goal.done .tx{padding-right:64px}
+@keyframes stamp{0%{transform:rotate(-14deg) scale(2.2);opacity:0}70%{transform:rotate(-14deg) scale(.92);opacity:1}100%{transform:rotate(-14deg) scale(1)}}
+.perfect{margin-top:14px;border-radius:20px;padding:14px 16px;background:var(--card);border:3px dashed var(--line);display:flex;align-items:center;gap:12px;font-weight:900}
+.perfect.got{border-style:solid;border-color:var(--kin);background:var(--kin-soft)}
+.perfect .hm{width:46px;height:46px;flex:none}
+.perfect small{display:block;font-weight:700;color:var(--muted);font-size:13px}
+
+/* weekly */
+.wk{background:var(--card);border:3px solid var(--line);border-radius:20px;padding:16px;display:grid;gap:12px}
+.wk.done{border-color:var(--ok);background:#f2faf5}
+.wk .head{display:flex;align-items:center;gap:14px}
+.dots{display:flex;gap:8px;flex-wrap:wrap}
+.dot{width:34px;height:34px;border-radius:50%;border:3px solid var(--line);background:#fff}
+.dot.on{background:var(--ai);border-color:var(--ai)}
+.wk.done .dot.on{background:var(--ok);border-color:var(--ok)}
+.wk .ctrl{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:14px 20px;border-radius:16px;font-weight:900;font-size:18px;background:var(--ai);color:#fff;min-height:56px;transition:transform .1s}
+.btn:active{transform:scale(.96)}
+.btn.sub{background:var(--ai-soft);color:var(--ai)}
+.btn.gold{background:var(--kin);color:#3d2900}
+.btn.red{background:var(--shu)}
+.btn.sm{padding:8px 14px;min-height:42px;font-size:15px;border-radius:12px}
+.btn:disabled{background:#e3e6ee;color:#9aa2b3;cursor:not-allowed}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:900;background:var(--ok);color:#fff}
+.list{display:grid;gap:12px}
+@media(min-width:760px){.list.two{grid-template-columns:1fr 1fr}}
+
+/* big goals */
+.big{background:var(--card);border:3px solid var(--line);border-radius:22px;padding:18px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.big .ic{width:68px;height:68px;border-radius:50%;background:var(--ai);color:#fff;display:grid;place-items:center;font-size:30px;font-weight:900;flex:none}
+.big .tx{flex:1;min-width:180px}
+.big .nm{font-size:20px;font-weight:900}
+.big .rw{font-size:14px;color:var(--muted);font-weight:700;margin-top:4px}
+.big.done{border-color:var(--kin);background:var(--kin-soft)}
+.big.done .ic{background:var(--kin)}
+
+/* rewards */
+.rewards{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.rw-card{background:var(--card);border:3px solid var(--line);border-radius:20px;padding:16px;display:grid;gap:10px;align-content:start}
+.rw-card .ic{font-size:38px;line-height:1}
+.rw-card .nm{font-size:19px;font-weight:900}
+.rw-card .cost{font-family:var(--f-num);font-size:26px;color:#a86b00}
+.rw-card .cost small{font-family:var(--f-body);font-size:14px;font-weight:900}
+.rw-card .need{font-size:13px;color:var(--muted);font-weight:700}
+.ticket{display:flex;align-items:center;gap:12px;background:var(--card);border:2px dashed var(--kin);border-radius:16px;padding:12px 14px;flex-wrap:wrap}
+.ticket .tx{flex:1;min-width:150px}
+.ticket .nm{font-weight:900;font-size:17px}
+.ticket .dt{font-size:13px;color:var(--muted)}
+.ticket.used{opacity:.55;border-color:var(--line)}
+
+/* calendar */
+.cal{background:var(--card);border:2px solid var(--line);border-radius:20px;padding:14px}
+.calhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.calhead b{font-size:20px;font-weight:900}
+.grid7{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.wd{text-align:center;font-size:13px;font-weight:900;color:var(--muted)}
+.wd.sun{color:var(--shu)}
+.day{aspect-ratio:1;max-width:100%;border-radius:12px;background:var(--bg);display:grid;place-items:center;position:relative;font-size:14px;font-weight:700;color:var(--muted)}
+.day.empty{background:none}
+.day.today{box-shadow:inset 0 0 0 3px var(--ai)}
+.day .st{position:absolute;inset:12%;border-radius:50%;border:3px solid var(--shu);color:var(--shu);display:grid;place-items:center;font-weight:900;font-size:clamp(11px,2.4vw,17px);background:#fff}
+.day .st.hana{box-shadow:0 0 0 3px #fff,0 0 0 5px var(--shu)}
+.day .n{position:absolute;left:5px;top:3px;font-size:11px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted);font-weight:700;margin-top:10px}
+.stats{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+.stat{background:var(--card);border:2px solid var(--line);border-radius:16px;padding:14px}
+.stat .v{font-family:var(--f-num);font-size:30px;color:var(--ai);line-height:1.1;font-variant-numeric:tabular-nums}
+.stat .v small{font-family:var(--f-body);font-size:14px;font-weight:900}
+.stat .k{font-size:13px;color:var(--muted);font-weight:700}
+
+/* settings */
+.set{display:grid;gap:16px}
+.set h3{margin:0 0 8px;font-size:18px;font-weight:900}
+.set p.help{margin:0 0 10px;color:var(--muted);font-size:14px}
+.erow{display:grid;grid-template-columns:52px 1fr;gap:8px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.erow:first-of-type{border-top:0}
+.erow .fields{display:flex;flex-wrap:wrap;gap:8px;align-items:center;min-width:0}
+.erow label{font-size:12px;color:var(--muted);font-weight:700;display:flex;flex-direction:column;gap:2px}
+input[type=text],input[type=number],input[type=password]{font:inherit;font-size:16px;padding:9px 10px;border:2px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);min-width:0}
+input.icon{width:52px;text-align:center;font-size:22px;padding:6px}
+input.name{flex:1 1 180px;width:100%}
+input.n{width:76px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.del{color:var(--shu);font-weight:900;font-size:14px;padding:8px 10px}
+
+/* nav */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:2px solid var(--line);padding:8px max(10px,env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) max(10px,env(safe-area-inset-left,0px));z-index:20}
+nav.tabs .in{max-width:760px;margin:0 auto;display:flex;gap:6px}
+nav.tabs button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 2px;border-radius:14px;font-weight:900;font-size:13px;color:var(--muted);min-height:62px}
+nav.tabs button .ti{font-size:22px;line-height:1;font-family:var(--f-num)}
+nav.tabs button.on{background:var(--ai);color:#fff}
+
+/* modal & fx */
+.ov{position:fixed;inset:0;background:rgba(18,26,45,.55);display:grid;place-items:center;z-index:50;padding:20px}
+.modal{background:var(--card);border-radius:26px;padding:24px;max-width:440px;width:100%;text-align:center;display:grid;gap:14px;max-height:90vh;overflow:auto;animation:pop .3s ease-out}
+.modal h3{margin:0;font-size:26px;font-weight:900;text-wrap:balance}
+.modal p{margin:0;color:var(--muted);font-weight:700}
+.modal .big-num{font-family:var(--f-num);font-size:60px;color:var(--ai);line-height:1}
+.modal .acts{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+@keyframes pop{0%{transform:scale(.8);opacity:0}100%{transform:scale(1);opacity:1}}
+.pin{display:flex;gap:10px;justify-content:center}
+.pin i{width:22px;height:22px;border-radius:50%;border:3px solid var(--ai)}
+.pin i.f{background:var(--ai)}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.pad button{background:var(--ai-soft);color:var(--ai);font-family:var(--f-num);font-size:26px;border-radius:16px;min-height:62px}
+.float{position:fixed;z-index:60;font-family:var(--f-num);font-size:26px;color:#a86b00;pointer-events:none;animation:rise 1s ease-out forwards;text-shadow:0 2px 0 #fff}
+@keyframes rise{0%{transform:translate(-50%,0);opacity:1}100%{transform:translate(-50%,-80px);opacity:0}}
+.toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 18px;border-radius:14px;font-weight:700;z-index:70;max-width:90vw}
+canvas#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:55}
+.empty-state{background:var(--card);border:3px dashed var(--line);border-radius:20px;padding:24px;text-align:center;color:var(--muted);font-weight:700}
+.parentbar{background:var(--ai);color:#fff;border-radius:14px;padding:10px 14px;font-weight:700;font-size:14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+/* matches */
+.match{background:var(--card);border:3px solid var(--line);border-radius:20px;padding:14px 16px;display:grid;gap:8px}
+.match.win{border-color:var(--shu)}
+.match .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.match .ev{font-weight:900;font-size:17px;flex:1;min-width:150px}
+.match .dt{font-size:13px;color:var(--muted);font-weight:700}
+.res{display:inline-grid;place-items:center;min-width:64px;padding:6px 12px;border-radius:999px;font-weight:900;font-size:15px;color:#fff;background:var(--muted)}
+.res.win{background:var(--shu)}.res.lose{background:var(--ai-mid)}.res.draw{background:#8a93a6}
+.board{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;background:var(--bg);border-radius:14px;padding:10px 12px}
+.board .side{display:flex;gap:6px;align-items:center;min-width:0;flex-wrap:wrap}
+.board .side.r{justify-content:flex-end}
+.board .who{font-size:13px;font-weight:900;color:var(--muted)}
+.ip{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:900;font-size:18px;border:3px solid var(--shu);color:var(--shu);background:#fff}
+.ip.opp{border-color:var(--ai);color:var(--ai)}
+.board .vs{font-family:var(--f-num);color:var(--muted)}
+.match .memo{font-size:15px;line-height:1.6}
+.match .memo b{font-size:12px;color:var(--muted);display:block}
+.fgrid{display:grid;gap:12px;text-align:left}
+.fgrid label{font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{padding:10px 14px;border-radius:12px;border:2px solid var(--line);font-weight:900;background:#fff;min-height:48px;min-width:48px}
+.chip.on{background:var(--ai);border-color:var(--ai);color:#fff}
+.chip.red.on{background:var(--shu);border-color:var(--shu)}
+textarea{font:inherit;font-size:16px;padding:9px 10px;border:2px solid var(--line);border-radius:10px;min-height:64px;resize:vertical;width:100%}
+.modal.wide{max-width:560px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><div class="mon">剣</div><div><h1 id="hName">けいこノート</h1><small id="hDate"></small></div></div>
+    <button class="gear" id="gearBtn" type="button">おうちの人</button>
+  </header>
+  <div id="pbar"></div>
+  <main id="view"><div class="empty-state">よみこみ中…</div></main>
+  <div class="note" id="saveNote"></div>
+</div>
+<nav class="tabs"><div class="in" id="tabs"></div></nav>
+<canvas id="fx"></canvas>
+<div id="modalRoot"></div>
+
+<script>
+(function(){
+"use strict";
+/* ---------- helpers ---------- */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad2=n=>String(n).padStart(2,"0");
+const ymd=d=>d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());
+const parse=s=>{const[a,b,c]=s.split("-").map(Number);return new Date(a,b-1,c)};
+const addDays=(s,n)=>{const d=parse(s);d.setDate(d.getDate()+n);return ymd(d)};
+const today=()=>ymd(new Date());
+const weekKey=s=>{const d=parse(s);const w=(d.getDay()+6)%7;d.setDate(d.getDate()-w);return ymd(d)};
+const WD=["日","月","火","水","木","金","土"];
+const jp=s=>{const d=parse(s);return (d.getMonth()+1)+"月"+d.getDate()+"日（"+WD[d.getDay()]+"）"};
+const uid=()=>Math.random().toString(36).slice(2,9);
+const num=(v,def)=>{const n=Math.round(Number(v));return Number.isFinite(n)&&n>=0?n:def};
+
+/* ---------- state ---------- */
+const LS="kendo-keiko-v1";
+function blank(){return{settings:{name:"",pin:"1234",perfectPt:10,perfectXp:10,streakPt:20,matchPt:20,ipponPt:10},
+  daily:[],weekly:[],big:[],rewards:[],days:{},weeks:{},bigDone:{},tickets:[],adjust:[],matches:[]}}
+function normalize(o){const b=blank();o=o&&typeof o==="object"?o:{};
+  const r=Object.assign(b,o);r.settings=Object.assign(blank().settings,o.settings||{});
+  for(const k of["daily","weekly","big","rewards","tickets","adjust","matches"])if(!Array.isArray(r[k]))r[k]=[];
+  for(const k of["days","weeks","bigDone"])if(!r[k]||typeof r[k]!=="object")r[k]={};
+  return r}
+const TEMPLATE={
+  daily:[{icon:"振",name:"素振り 100かい",pt:10,xp:10},{icon:"足",name:"足さばき 5分",pt:10,xp:10},{icon:"面",name:"面打ち 30かい",pt:10,xp:10},{icon:"礼",name:"正座・もくそう 1分",pt:5,xp:5}],
+  weekly:[{icon:"走",name:"ジョギング",target:3,pt:30,xp:30},{icon:"打",name:"打ちこみ台でれんしゅう",target:2,pt:30,xp:30},{icon:"見",name:"剣道の動画を見てまなぶ",target:1,pt:15,xp:15}],
+  big:[{icon:"級",name:"つぎの級しんさに合格する",pt:200,xp:200},{icon:"一",name:"試合で一本とる",pt:150,xp:150},{icon:"続",name:"30日れんぞくで自主練",pt:150,xp:150}],
+  rewards:[{icon:"🎮",name:"ゲーム 30分",cost:50},{icon:"🎮",name:"ゲーム 1時間",cost:90},{icon:"🍪",name:"おかし ぞうりょう",cost:30},{icon:"🍛",name:"すきな夕ごはんリクエスト",cost:120}]
+};
+let S=normalize(null);
+let loaded=false, db=null, ref=null, dirty=false, saving=false, saveTimer=0, parent=false, tab="today", calMonth=null;
+
+function lsLoad(){try{const t=localStorage.getItem(LS);return t?JSON.parse(t):null}catch(e){return null}}
+function lsSave(o){try{localStorage.setItem(LS,JSON.stringify(o))}catch(e){}}
+
+function commit(){dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(flush,350);render()}
+async function flush(){if(saving)return;saving=true;
+  while(dirty){dirty=false;S.updatedAt=new Date().toISOString();const snap=JSON.parse(JSON.stringify(S));lsSave(snap);
+    if(ref){try{await ref.set(snap)}catch(e){
+      if(e&&e.code==="unavailable"){await new Promise(r=>setTimeout(r,800+Math.random()*800));try{await ref.set(snap)}catch(e2){toast("ほぞんできませんでした。通信をたしかめてね")}}
+      else if(e&&e.code==="invalid_argument"){toast("この画面では書きこみできません（見るだけモード）")}
+      else toast("ほぞんできませんでした")}}}
+  saving=false}
+
+/* ---------- derived ---------- */
+function practiceDates(){return Object.keys(S.days).filter(d=>Object.keys(S.days[d]).some(k=>k!=="_all")).sort()}
+function streakInfo(){
+  const set=new Set(practiceDates());const t=today();
+  let cur=0,d=set.has(t)?t:addDays(t,-1);while(set.has(d)){cur++;d=addDays(d,-1)}
+  let best=0,run=0,prev=null;const bonusDays=[];
+  for(const x of [...set].sort()){run=(prev&&addDays(prev,1)===x)?run+1:1;prev=x;if(run>best)best=run;if(run%7===0)bonusDays.push(x)}
+  return{cur,best,doneToday:set.has(t),bonusDays,total:set.size}}
+function totals(){let pt=0,xp=0;
+  for(const d in S.days)for(const k in S.days[d]){const v=S.days[d][k];if(Array.isArray(v)){pt+=v[0]||0;xp+=v[1]||0}}
+  for(const w in S.weeks)for(const id in S.weeks[w]){const r=S.weeks[w][id];if(r&&Array.isArray(r.done)){pt+=r.done[0]||0;xp+=r.done[1]||0}}
+  for(const id in S.bigDone){const r=S.bigDone[id];pt+=r.pt||0;xp+=r.xp||0}
+  const si=streakInfo();pt+=si.bonusDays.length*S.settings.streakPt;xp+=si.bonusDays.length*S.settings.streakPt;
+  for(const a of S.adjust)pt+=a.pt||0;
+  for(const m of S.matches)if(Array.isArray(m.award)){pt+=m.award[0]||0;xp+=m.award[1]||0}
+  let spent=0;for(const t of S.tickets)spent+=t.cost||0;
+  return{earned:pt,pt:pt-spent,xp,spent}}
+const needFor=lv=>30+lv*20;
+function levelInfo(xp){let lv=1,rest=xp,need=needFor(1);while(rest>=need){rest-=need;lv++;need=needFor(lv)}return{lv,rest,need}}
+const TITLES=[[1,"見ならい剣士"],[3,"すぶり剣士"],[5,"気合いの剣士"],[8,"一本ねらいの剣士"],[12,"けいこの達人"],[16,"道場のエース"],[22,"剣の名人"],[30,"でんせつの剣士"]];
+const titleFor=lv=>{let t=TITLES[0][1];for(const[l,n]of TITLES)if(lv>=l)t=n;return t};
+
+/* ---------- actions ---------- */
+function snapshotScore(){const t=totals();return{lv:levelInfo(t.xp).lv,streak:streakInfo().cur}}
+function afterChange(before,ev){const a=snapshotScore();
+  if(a.lv>before.lv){sound("lvup");confetti();setTimeout(()=>modal(`<div class="big-num">Lv ${a.lv}</div><h3>レベルアップ！</h3><p>「${esc(titleFor(a.lv))}」になったよ</p><div class="acts"><button class="btn" data-close>やったー！</button></div>`),350);return}
+  if(a.streak>before.streak&&a.streak>0&&a.streak%7===0){confetti();modal(`<div class="big-num">${a.streak}日</div><h3>${a.streak}日れんぞく！</h3><p>ボーナス +${S.settings.streakPt}pt ゲット</p><div class="acts"><button class="btn" data-close>つづけるぞ！</button></div>`);return}
+  if(ev)ev()}
+function toggleDaily(id,date,el){const g=S.daily.find(x=>x.id===id);if(!g)return;const before=snapshotScore();
+  const day=S.days[date]||(S.days[date]={});
+  if(day[id]){delete day[id];sound("off")}else{day[id]=[g.pt,g.xp];sound("on");if(el)floatAt(el,"+"+g.pt+"pt")}
+  const all=S.daily.length>0&&S.daily.every(x=>day[x.id]);const had=!!day._all;
+  if(all&&!had){day._all=[S.settings.perfectPt,S.settings.perfectXp]}else if(!all&&had){delete day._all}
+  if(!Object.keys(day).length)delete S.days[date];
+  commit();
+  afterChange(before,()=>{if(all&&!had&&date===today()){confetti();modal(`<svg class="hm" viewBox="0 0 100 100" width="110" height="110" style="margin:0 auto">${hanamaru()}</svg><h3>きょうの目標 ぜんぶできた！</h3><p>はなまるボーナス +${S.settings.perfectPt}pt</p><div class="acts"><button class="btn" data-close>おつかれさま！</button></div>`)}})}
+function bumpWeekly(id,delta,el){const g=S.weekly.find(x=>x.id===id);if(!g)return;const before=snapshotScore();
+  const wk=weekKey(today());const W=S.weeks[wk]||(S.weeks[wk]={});const r=W[id]||(W[id]={count:0,done:null});
+  r.count=Math.max(0,r.count+delta);
+  if(delta>0){sound("on")}else sound("off");
+  let justDone=false;
+  if(r.count>=g.target&&!r.done){r.done=[g.pt,g.xp];justDone=true}else if(r.count<g.target&&r.done){r.done=null}
+  if(r.count===0&&!r.done)delete W[id];
+  commit();
+  afterChange(before,()=>{if(justDone){confetti();if(el)floatAt(el,"+"+g.pt+"pt");modal(`<div class="big-num">+${g.pt}pt</div><h3>週の目標 たっせい！</h3><p>${esc(g.name)}</p><div class="acts"><button class="btn" data-close>やったね！</button></div>`)}})}
+function setBig(id,on){const g=S.big.find(x=>x.id===id);if(!g)return;const before=snapshotScore();
+  if(on){S.bigDone[id]={date:today(),pt:g.pt,xp:g.xp}}else delete S.bigDone[id];commit();
+  afterChange(before,()=>{if(on){confetti();modal(`<div class="big-num">+${g.pt}pt</div><h3>大きな目標 たっせい！</h3><p>${esc(g.name)}</p><div class="acts"><button class="btn" data-close>すごい！</button></div>`)}})}
+function buyReward(id){const r=S.rewards.find(x=>x.id===id);if(!r)return;const t=totals();
+  if(t.pt<r.cost){toast("あと "+(r.cost-t.pt)+"pt たりないよ");return}
+  modal(`<div style="font-size:54px">${esc(r.icon)}</div><h3>${esc(r.name)}<br>と こうかんする？</h3><p>${r.cost}pt つかいます（のこり ${t.pt-r.cost}pt）</p><div class="acts"><button class="btn sub" data-close>やめる</button><button class="btn gold" id="mOk">こうかんする</button></div>`,
+  m=>{m.querySelector("#mOk").onclick=()=>{S.tickets.unshift({id:uid(),rewardId:r.id,name:r.name,icon:r.icon,cost:r.cost,date:today(),used:false});sound("coin");commit();closeModal();confetti();
+    modal(`<div style="font-size:54px">${esc(r.icon)}</div><h3>チケットをゲット！</h3><p>「${esc(r.name)}」<br>おうちの人に見せてね</p><div class="acts"><button class="btn" data-close>OK</button></div>`)}})}
+
+/* ---------- render ---------- */
+const TABS=[["today","今","きょう"],["week","週","しゅう"],["big","夢","目標"],["match","試","しあい"],["shop","pt","ごほうび"],["log","記","きろく"]];
+/* ---------- matches ---------- */
+const IPPON=[["メ","面"],["コ","小手"],["ド","胴"],["ツ","突き"],["反","反則"]];
+const RES={win:"勝ち",lose:"負け",draw:"引き分け"};
+function matchAward(m){const s=S.settings;const n=(m.mine||[]).filter(x=>x!=="反").length;const pt=s.matchPt+n*s.ipponPt;return[pt,pt]}
+function boardHtml(m){const ip=(a,cls)=>(a||[]).map(x=>`<span class="ip ${cls}">${esc(x)}</span>`).join("")||`<span class="who">なし</span>`;
+  return `<div class="board"><div class="side"><span class="who">じぶん</span>${ip(m.mine,"")}</div><span class="vs">-</span><div class="side r">${ip(m.opp,"opp")}<span class="who">${esc(m.opponent||"あいて")}</span></div></div>`}
+function vMatch(){const M=[...S.matches].sort((a,b)=>b.date<a.date?-1:b.date>a.date?1:0);
+  const w=M.filter(m=>m.result==="win").length,l=M.filter(m=>m.result==="lose").length,d=M.filter(m=>m.result==="draw").length;
+  const cnt={};for(const m of M)for(const x of m.mine||[])cnt[x]=(cnt[x]||0)+1;
+  const breakdown=IPPON.filter(([k])=>k!=="反").map(([k,n])=>`<span><span class="ip" style="display:inline-grid;width:30px;height:30px;font-size:14px;vertical-align:middle">${k}</span> ${n} ${cnt[k]||0}本</span>`).join("　");
+  return `<div class="sec"><h2>試合のきろく</h2><button type="button" class="btn" data-addmatch>＋ 試合をのせる</button></div>
+  <div class="stats" style="margin-bottom:12px">
+   <div class="stat"><div class="v">${M.length}<small> 試合</small></div><div class="k">出た試合</div></div>
+   <div class="stat"><div class="v" style="color:var(--shu)">${w}<small> 勝</small></div><div class="k">${l}敗 ${d}分</div></div>
+   <div class="stat"><div class="v">${Object.entries(cnt).filter(([k])=>k!=="反").reduce((a,[,v])=>a+v,0)}<small> 本</small></div><div class="k">とった一本</div></div>
+  </div>
+  ${M.length?`<div class="panel" style="margin-bottom:12px;font-weight:700;font-size:15px;line-height:2.2">とった技：${breakdown}</div>`:""}
+  <div class="list two">${M.length?M.map(m=>`<div class="match ${m.result}"><div class="top"><span class="res ${m.result}">${RES[m.result]||""}</span><div class="ev">${esc(m.event||"試合")}${m.round?`<span style="font-weight:700;color:var(--muted);font-size:14px">　${esc(m.round)}</span>`:""}<div class="dt">${jp(m.date)}${m.award?`・+${m.award[0]}pt`:""}</div></div>
+     <button type="button" class="btn sub sm" data-editmatch="${m.id}">なおす</button></div>
+     ${boardHtml(m)}
+     ${m.good?`<div class="memo"><b>よかったところ</b>${esc(m.good)}</div>`:""}${m.next?`<div class="memo"><b>つぎにがんばること</b>${esc(m.next)}</div>`:""}</div>`).join("")
+   :`<div class="empty-state">まだ試合のきろくがありません。<br>試合に出たら「＋ 試合をのせる」で のこそう。出るだけで +${S.settings.matchPt}pt、一本とるごとに +${S.settings.ipponPt}pt！</div>`}</div>`}
+function editMatch(id){const src=id?S.matches.find(x=>x.id===id):null;
+  const m=src?JSON.parse(JSON.stringify(src)):{id:uid(),date:today(),event:"",round:"",opponent:"",mine:[],opp:[],result:"",good:"",next:""};
+  let resTouched=!!src;
+  const autoRes=()=>{const a=m.mine.length,b=m.opp.length;return a>b?"win":a<b?"lose":"draw"};
+  const chips=(side)=>IPPON.map(([k,n])=>`<button type="button" class="chip ${side==="mine"?"red":""}" data-ipadd="${side}:${k}">${k} <small>${n}</small></button>`).join("");
+  const draw=md=>{md.querySelector("#mBoard").innerHTML=boardHtml(Object.assign({},m,{opponent:md.querySelector("#m-opp").value}));
+    if(!resTouched)m.result=autoRes();md.querySelectorAll("[data-res]").forEach(b=>b.classList.toggle("on",b.dataset.res===m.result))};
+  modal(`<h3>${src?"試合をなおす":"試合をのせる"}</h3><div class="fgrid">
+   <div class="row"><label style="flex:0 0 auto">日にち<input type="date" id="m-date" value="${m.date}" style="font:inherit;padding:8px;border:2px solid var(--line);border-radius:10px"></label><label style="flex:1 1 160px">大会の名前<input type="text" id="m-ev" value="${esc(m.event)}" placeholder="れい：市民剣道大会"></label></div>
+   <div class="row"><label style="flex:1 1 120px">何回戦など<input type="text" id="m-round" value="${esc(m.round)}" placeholder="れい：2回戦・団体戦 先鋒"></label><label style="flex:1 1 120px">あいて<input type="text" id="m-opp" value="${esc(m.opponent)}" placeholder="れい：〇〇道場"></label></div>
+   <div id="mBoard"></div>
+   <label>じぶんがとった一本（タッチで追加）<div class="chips">${chips("mine")}</div></label>
+   <label>あいてにとられた一本<div class="chips">${chips("opp")}</div></label>
+   <div class="row"><button type="button" class="btn sub sm" data-ipclear>一本をやりなおす</button></div>
+   <label>けっか<div class="chips">${Object.entries(RES).map(([k,v])=>`<button type="button" class="chip ${k==="win"?"red":""}" data-res="${k}">${v}</button>`).join("")}</div><small style="font-weight:500">判定・延長で決まったときは けっかを えらびなおしてね</small></label>
+   <label>よかったところ<textarea id="m-good" placeholder="れい：出ばな面がきまった">${esc(m.good)}</textarea></label>
+   <label>つぎにがんばること<textarea id="m-next" placeholder="れい：小手を打たれないように 手元をしめる">${esc(m.next)}</textarea></label></div>
+   <div class="acts">${src&&parent?`<button type="button" class="btn red sm" id="mDel">けす</button>`:""}<button type="button" class="btn sub" data-close>やめる</button><button type="button" class="btn" id="mSave">のせる</button></div>`,
+  md=>{md.classList.add("wide");draw(md);
+    md.querySelector("#m-opp").oninput=()=>draw(md);
+    md.querySelectorAll("[data-ipadd]").forEach(b=>b.onclick=()=>{const[s,k]=b.dataset.ipadd.split(":");if(m[s].length<3){m[s].push(k);sound("on")}draw(md)});
+    md.querySelector("[data-ipclear]").onclick=()=>{m.mine=[];m.opp=[];draw(md)};
+    md.querySelectorAll("[data-res]").forEach(b=>b.onclick=()=>{m.result=b.dataset.res;resTouched=true;draw(md)});
+    const del=md.querySelector("#mDel");if(del)del.onclick=()=>{S.matches=S.matches.filter(x=>x.id!==m.id);commit();closeModal();toast("けしました")};
+    md.querySelector("#mSave").onclick=()=>{const before=snapshotScore();
+      m.date=md.querySelector("#m-date").value||today();m.event=md.querySelector("#m-ev").value.trim();m.round=md.querySelector("#m-round").value.trim();
+      m.opponent=md.querySelector("#m-opp").value.trim();m.good=md.querySelector("#m-good").value.trim();m.next=md.querySelector("#m-next").value.trim();
+      if(!m.result)m.result=autoRes();m.award=matchAward(m);
+      if(src)Object.assign(src,m);else S.matches.push(m);commit();closeModal();sound("coin");
+      afterChange(before,()=>{if(!src){confetti();modal(`<div class="big-num">+${m.award[0]}pt</div><h3>${m.result==="win"?"勝ったね！ おめでとう！":"試合おつかれさま！"}</h3><p>${m.result==="win"?"つぎの試合もこの調子で":"くやしさは つぎの けいこに つなげよう"}</p><div class="acts"><button class="btn" data-close>OK</button></div>`)}})}})}
+function renderTabs(){const list=parent?[...TABS,["set","設","せってい"]]:TABS;
+  $("#tabs").innerHTML=list.map(([k,i,l])=>`<button type="button" data-tab="${k}" class="${tab===k?"on":""}"><span class="ti">${i}</span>${l}</button>`).join("")}
+function render(){
+  if(!parent&&tab==="set")tab="today";
+  const nm=S.settings.name?S.settings.name+"の けいこノート":"けいこノート";$("#hName").textContent=nm;
+  $("#hDate").textContent=jp(today());
+  $("#gearBtn").textContent=parent?"おうちの人モード：おわる":"おうちの人";$("#gearBtn").classList.toggle("on",parent);
+  $("#pbar").innerHTML=parent?`<div class="parentbar"><span>おうちの人モード中：目標の編集・大きな目標の達成・チケットの使用ずみ・過去の日の修正ができます</span></div>`:"";
+  renderTabs();
+  const v=$("#view");
+  if(!loaded){v.innerHTML=`<div class="empty-state">よみこみ中…</div>`;return}
+  v.innerHTML=({today:vToday,week:vWeek,big:vBig,match:vMatch,shop:vShop,log:vLog,set:vSet}[tab]||vToday)();
+}
+function statusHtml(){const t=totals(),L=levelInfo(t.xp),si=streakInfo();
+  const pct=Math.round(L.rest/L.need*100);
+  let msg,cold=false;
+  if(si.doneToday)msg="きょうも できた！ あしたもつづけよう";
+  else if(si.cur>0)msg=`きょうやれば ${si.cur+1}日目！`;
+  else{msg="きょうから はじめよう";cold=true}
+  const shown=si.cur;
+  return `<div class="status">
+  <div class="panel lvcard"><div class="lvrow"><div class="lvbadge"><div><span>Lv</span><b>${L.lv}</b></div></div>
+    <div><div class="lvtitle">${esc(titleFor(L.lv))}</div><div class="lvsub">けいけんち ぜんぶで ${t.xp}</div></div></div>
+    <div class="xpbar"><i style="width:${pct}%"></i></div><div class="xptext"><span>${L.rest} / ${L.need}</span><span>あと ${L.need-L.rest} でLvアップ</span></div></div>
+  <div class="panel streak ${cold?"cold":""}"><div class="flame">${flameSvg(!cold)}</div>
+    <div><div class="num">${shown}<small> 日れんぞく</small></div><div class="msg">${msg}</div></div></div>
+  <div class="panel points"><div class="coin">P</div><div><div class="lbl">もっているポイント</div><div class="num">${t.pt}<small> pt</small></div></div></div>
+  </div>`}
+function vToday(){const d=today(),day=S.days[d]||{};
+  const n=S.daily.filter(g=>day[g.id]).length;
+  let goals;
+  if(!S.daily.length)goals=`<div class="empty-state">まだ まいにちの目標がありません。<br>おうちの人が「おうちの人」ボタンから目標をきめてね。</div>`;
+  else goals=`<div class="goals">${S.daily.map(g=>`<button type="button" class="goal ${day[g.id]?"done":""}" data-daily="${g.id}">
+      <div class="ic">${esc(g.icon)}</div><div class="tx"><div class="nm">${esc(g.name)}</div><div class="rw"><span class="p">+${g.pt}pt</span>　けいけんち +${g.xp}</div></div>
+      <div class="hanko">でき<br>た！</div></button>`).join("")}</div>
+    <div class="perfect ${day._all?"got":""}"><svg class="hm" viewBox="0 0 100 100">${day._all?hanamaru():`<circle cx="50" cy="50" r="40" fill="none" stroke="#d8deea" stroke-width="6" stroke-dasharray="10 8"/>`}</svg>
+      <div>${day._all?"きょうは はなまる！":"ぜんぶできたら はなまる"}<small>ボーナス +${S.settings.perfectPt}pt・けいけんち +${S.settings.perfectXp}</small></div></div>`;
+  return `<div class="home">${statusHtml()}<section><div class="sec"><h2>きょうの自主練</h2><span class="meta"><b>${n}</b> / ${S.daily.length} できた</span></div>${goals}
+  <p class="note">できたらカードをタッチ。まちがえたら もう一回タッチで もどせるよ。</p></section></div>`}
+function vWeek(){const wk=weekKey(today()),W=S.weeks[wk]||{};
+  const end=addDays(wk,6);
+  const body=S.weekly.length?`<div class="list two">${S.weekly.map(g=>{const r=W[g.id]||{count:0};const done=r.count>=g.target;
+    const dots=Array.from({length:Math.max(g.target,r.count)},(_,i)=>`<span class="dot ${i<r.count?"on":""}"></span>`).join("");
+    return `<div class="wk ${done?"done":""}"><div class="head"><div class="goal" style="border:0;padding:0;min-height:0;background:none;pointer-events:none"><div class="ic">${esc(g.icon)}</div><div class="tx"><div class="nm">${esc(g.name)}</div><div class="rw">今週 ${g.target}かい ・ <span class="p">+${g.pt}pt</span></div></div></div></div>
+      <div class="dots">${dots}</div>
+      <div class="ctrl"><button type="button" class="btn" data-wplus="${g.id}">やった！ ＋1</button>${r.count>0?`<button type="button" class="btn sub sm" data-wminus="${g.id}">−1 もどす</button>`:""}${done?`<span class="badge">たっせい！</span>`:`<span class="meta" style="font-weight:700;color:var(--muted)">あと ${g.target-r.count}かい</span>`}</div></div>`}).join("")}</div>`
+    :`<div class="empty-state">まだ 週の目標がありません。おうちの人が きめてね。</div>`;
+  const days=[...Array(7)].map((_,i)=>addDays(wk,i));const set=new Set(practiceDates());
+  const strip=`<div class="panel" style="margin-bottom:14px"><div class="sec" style="margin:0 0 8px"><h2 style="font-size:17px">今週の自主練</h2><span class="meta"><b>${days.filter(x=>set.has(x)).length}</b> / 7日</span></div>
+    <div class="grid7">${days.map(x=>{const dd=S.days[x]||{};const p=set.has(x);return `<div><div class="wd ${parse(x).getDay()===0?"sun":""}">${WD[parse(x).getDay()]}</div><div class="day ${x===today()?"today":""}">${p?`<span class="st ${dd._all?"hana":""}">${dd._all?"花":"練"}</span>`:`<span>${parse(x).getDate()}</span>`}</div></div>`}).join("")}</div></div>`;
+  return `<div class="sec"><h2>今週の目標</h2><span class="meta">${jp(wk)}〜${jp(end)}</span></div>${strip}${body}`}
+function vBig(){
+  const body=S.big.length?`<div class="list">${S.big.map(g=>{const d=S.bigDone[g.id];
+    return `<div class="big ${d?"done":""}"><div class="ic">${esc(g.icon)}</div><div class="tx"><div class="nm">${esc(g.name)}</div><div class="rw">${d?`${jp(d.date)} に たっせい！`:`たっせいしたら <b style="color:#a86b00">+${g.pt}pt</b>・けいけんち +${g.xp}`}</div></div>
+    ${parent?(d?`<button type="button" class="btn sub sm" data-bigoff="${g.id}">たっせいを取り消す</button>`:`<button type="button" class="btn gold" data-bigon="${g.id}">たっせいにする</button>`):(d?`<span class="badge" style="background:var(--kin);color:#3d2900">たっせい</span>`:"")}</div>`}).join("")}</div>
+    ${parent?"":`<p class="note">できたら おうちの人に見せて「たっせい」にしてもらおう。</p>`}`
+    :`<div class="empty-state">まだ 大きな目標がありません。おうちの人と いっしょに きめよう。</div>`;
+  return `<div class="sec"><h2>たっせいしたい目標</h2></div>${body}`}
+function vShop(){const t=totals();
+  const cards=S.rewards.length?`<div class="rewards">${S.rewards.map(r=>{const ok=t.pt>=r.cost;return `<div class="rw-card"><div class="ic">${esc(r.icon)}</div><div class="nm">${esc(r.name)}</div><div class="cost">${r.cost}<small> pt</small></div>
+    <button type="button" class="btn gold" data-buy="${r.id}" ${ok?"":"disabled"}>${ok?"こうかんする":"あと "+(r.cost-t.pt)+"pt"}</button></div>`}).join("")}</div>`
+    :`<div class="empty-state">まだ ごほうびがありません。おうちの人が きめてね。</div>`;
+  const open=S.tickets.filter(x=>!x.used),used=S.tickets.filter(x=>x.used).slice(0,10);
+  const tk=x=>`<div class="ticket ${x.used?"used":""}"><div style="font-size:30px">${esc(x.icon)}</div><div class="tx"><div class="nm">${esc(x.name)}</div><div class="dt">${jp(x.date)} に こうかん・${x.cost}pt${x.used?"・つかった":""}</div></div>
+    ${parent?(x.used?`<button type="button" class="btn sub sm" data-tkunuse="${x.id}">もどす</button>`:`<button type="button" class="btn sm" data-tkuse="${x.id}">つかった</button><button type="button" class="del" data-tkcancel="${x.id}">取り消してポイントを返す</button>`):""}</div>`;
+  return `<div class="sec"><h2>ごほうびと こうかん</h2><span class="meta">もっている <b>${t.pt}</b> pt</span></div>${cards}
+   <div class="sec" style="margin-top:22px"><h2 style="font-size:19px">もっているチケット</h2><span class="meta">${open.length}まい</span></div>
+   <div class="list">${open.length?open.map(tk).join(""):`<div class="empty-state">チケットはまだないよ</div>`}</div>
+   ${used.length?`<div class="sec" style="margin-top:18px"><h2 style="font-size:17px">つかったチケット</h2></div><div class="list">${used.map(tk).join("")}</div>`:""}`}
+function vLog(){const si=streakInfo(),t=totals();
+  if(!calMonth){const d=new Date();calMonth=[d.getFullYear(),d.getMonth()]}
+  const [y,m]=calMonth;const first=new Date(y,m,1);const lead=(first.getDay()+6)%7;const dim=new Date(y,m+1,0).getDate();
+  const set=new Set(practiceDates());let cells="";
+  for(let i=0;i<lead;i++)cells+=`<div class="day empty"></div>`;
+  for(let d=1;d<=dim;d++){const s=y+"-"+pad2(m+1)+"-"+pad2(d);const dd=S.days[s]||{};const p=set.has(s);
+    cells+=`<div class="day ${s===today()?"today":""}" ${parent&&s<=today()?`data-editday="${s}" role="button" tabindex="0" style="cursor:pointer"`:""}>${p?`<span class="n">${d}</span><span class="st ${dd._all?"hana":""}">${dd._all?"花":"練"}</span>`:d}</div>`}
+  const monthDays=[...set].filter(s=>s.startsWith(y+"-"+pad2(m+1))).length;
+  return `<div class="sec"><h2>きろく</h2></div>
+  <div class="stats" style="margin-bottom:14px">
+   <div class="stat"><div class="v">${si.cur}<small> 日</small></div><div class="k">いまの れんぞく</div></div>
+   <div class="stat"><div class="v">${si.best}<small> 日</small></div><div class="k">さいこう れんぞく</div></div>
+   <div class="stat"><div class="v">${si.total}<small> 日</small></div><div class="k">自主練した日 ぜんぶ</div></div>
+   <div class="stat"><div class="v">${t.earned}<small> pt</small></div><div class="k">もらったポイント ぜんぶ</div></div>
+  </div>
+  <div class="cal"><div class="calhead"><button type="button" class="btn sub sm" data-cal="-1">← 前の月</button><b>${y}年 ${m+1}月　<span style="font-size:15px;color:var(--muted)">${monthDays}日</span></b><button type="button" class="btn sub sm" data-cal="1">次の月 →</button></div>
+   <div class="grid7">${["月","火","水","木","金","土","日"].map((w,i)=>`<div class="wd ${i===6?"sun":""}">${w}</div>`).join("")}${cells}</div>
+   <div class="legend"><span><b style="color:var(--shu)">練</b>＝自主練した日</span><span><b style="color:var(--shu)">花</b>＝ぜんぶできた はなまるの日</span><span>7日れんぞくごとに +${S.settings.streakPt}pt</span>${parent?"<span>日にちをタッチで その日を修正</span>":""}</div></div>`}
+function editRows(kind){const L=S[kind];
+  const f={daily:g=>`<label>pt<input class="n" type="number" min="0" id="e-${g.id}-pt" data-ed="${kind}:${g.id}:pt" value="${g.pt}"></label><label>けいけんち<input class="n" type="number" min="0" id="e-${g.id}-xp" data-ed="${kind}:${g.id}:xp" value="${g.xp}"></label>`,
+    weekly:g=>`<label>今週 なんかい<input class="n" type="number" min="1" id="e-${g.id}-tg" data-ed="${kind}:${g.id}:target" value="${g.target}"></label><label>pt<input class="n" type="number" min="0" id="e-${g.id}-pt" data-ed="${kind}:${g.id}:pt" value="${g.pt}"></label><label>けいけんち<input class="n" type="number" min="0" id="e-${g.id}-xp" data-ed="${kind}:${g.id}:xp" value="${g.xp}"></label>`,
+    big:g=>`<label>pt<input class="n" type="number" min="0" id="e-${g.id}-pt" data-ed="${kind}:${g.id}:pt" value="${g.pt}"></label><label>けいけんち<input class="n" type="number" min="0" id="e-${g.id}-xp" data-ed="${kind}:${g.id}:xp" value="${g.xp}"></label>`,
+    rewards:g=>`<label>ひつようpt<input class="n" type="number" min="1" id="e-${g.id}-c" data-ed="${kind}:${g.id}:cost" value="${g.cost}"></label>`}[kind];
+  return L.map(g=>`<div class="erow"><input class="icon" type="text" maxlength="2" id="e-${g.id}-i" data-ed="${kind}:${g.id}:icon" value="${esc(g.icon)}" aria-label="マーク">
+    <div class="fields"><input class="name" type="text" id="e-${g.id}-n" data-ed="${kind}:${g.id}:name" value="${esc(g.name)}" aria-label="名前">${f(g)}<button type="button" class="del" data-delitem="${kind}:${g.id}">けす</button></div></div>`).join("")
+    +`<div style="margin-top:10px"><button type="button" class="btn sub sm" data-additem="${kind}">＋ ついか</button></div>`}
+function vSet(){const s=S.settings;const empty=!S.daily.length&&!S.weekly.length&&!S.big.length&&!S.rewards.length;
+  return `<div class="sec"><h2>せってい（おうちの人）</h2></div><div class="set">
+  ${empty?`<div class="panel"><h3>まずは おすすめの目標を入れる</h3><p class="help">素振り・足さばき・面打ちなどの目標と、ゲーム時間・おかし増量のごほうびをまとめて入れます。あとから自由に直せます。</p><button type="button" class="btn" data-template>おすすめを入れる</button></div>`:""}
+  <div class="panel"><h3>基本</h3><div class="row">
+   <label style="flex:1 1 200px;font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px">お子さんの名前<input type="text" id="s-name" data-set="name" value="${esc(s.name)}" placeholder="れい：たろう"></label>
+   <label style="font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px">あんしょう番号（4けた）<input type="text" inputmode="numeric" maxlength="4" id="s-pin" data-set="pin" value="${esc(s.pin)}" style="width:110px"></label></div>
+   <div class="row" style="margin-top:10px">
+   <label style="font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px">はなまるボーナス pt<input class="n" type="number" min="0" id="s-pp" data-set="perfectPt" value="${s.perfectPt}"></label>
+   <label style="font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px">はなまる けいけんち<input class="n" type="number" min="0" id="s-px" data-set="perfectXp" value="${s.perfectXp}"></label>
+   <label style="font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px">7日れんぞくボーナス pt<input class="n" type="number" min="0" id="s-sp" data-set="streakPt" value="${s.streakPt}"></label>
+   <label style="font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px">試合に出た pt<input class="n" type="number" min="0" id="s-mp" data-set="matchPt" value="${s.matchPt}"></label>
+   <label style="font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px">一本とるごと pt<input class="n" type="number" min="0" id="s-ip" data-set="ipponPt" value="${s.ipponPt}"></label></div></div>
+  <div class="panel"><h3>まいにちの目標</h3><p class="help">1日に1つでもできたら「れんぞく」がつながります。ぜんぶできたら はなまるボーナス。</p>${editRows("daily")}</div>
+  <div class="panel"><h3>週の目標</h3><p class="help">月曜はじまり。回数に とどいたら ポイントが入ります。</p>${editRows("weekly")}</div>
+  <div class="panel"><h3>たっせいしたい目標</h3><p class="help">「目標」タブで、おうちの人が たっせいボタンを押すと ポイントが入ります。</p>${editRows("big")}</div>
+  <div class="panel"><h3>ごほうび</h3><p class="help">マークは絵文字も使えます。</p>${editRows("rewards")}</div>
+  <div class="panel"><h3>ポイントを手で ふやす・へらす</h3><p class="help">おてつだい・道場でほめられた日などに。マイナスも入れられます。</p>
+   <div class="row"><label style="font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px">pt<input type="number" id="adj-pt" style="width:100px" value="10"></label>
+   <label style="flex:1 1 200px;font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px">りゆう<input type="text" id="adj-note" placeholder="れい：先生にほめられた"></label><button type="button" class="btn sm" data-adjust>入れる</button></div>
+   ${S.adjust.length?`<div style="margin-top:10px">${S.adjust.slice(0,8).map(a=>`<div class="erow" style="grid-template-columns:1fr auto"><span>${jp(a.date)}　${esc(a.note||"")}　<b>${a.pt>0?"+":""}${a.pt}pt</b></span><button type="button" class="del" data-deladj="${a.id}">けす</button></div>`).join("")}</div>`:""}</div>
+  <div class="panel"><h3>バックアップ（記録の引っこし）</h3>
+   <p class="help">記録はこの端末のブラウザの中だけに保存されています。端末を変えるとき・ブラウザのデータを消す前に、バックアップを保存してください。${S.lastBackup?`前回のバックアップ：${jp(S.lastBackup)}`:"まだバックアップしていません。"}</p>
+   <div class="row"><button type="button" class="btn sm" data-backup>バックアップを保存（ファイル）</button><button type="button" class="btn sub sm" data-copycode>引っこしコードをコピー</button></div>
+   <div class="row" style="margin-top:10px"><label class="btn sub sm" for="restoreFile" style="cursor:pointer">ファイルから もどす</label><input type="file" id="restoreFile" accept=".json,application/json,text/plain" hidden><button type="button" class="btn sub sm" data-pastecode>引っこしコードから もどす</button></div></div>
+  <div class="panel"><h3>はじめからやりなおす</h3><p class="help">この端末の記録をすべて消します。消す前にバックアップを保存しておくと安心です。</p><button type="button" class="btn red sm" data-resetall>すべての記録を消す</button></div>
+  </div>`}
+
+/* ---------- first run / backup ---------- */
+function freshState(name,pin,useTemplate){const n=normalize(null);n.settings.name=name;n.settings.pin=pin;
+  if(useTemplate)for(const k of["daily","weekly","big","rewards"])n[k]=TEMPLATE[k].map(x=>Object.assign({id:uid()},x));return n}
+function firstRun(){
+  modal(`<div class="brand" style="justify-content:center"><div class="mon">剣</div></div><h3>けいこノートへ ようこそ</h3>
+   <p>剣道の自主練を記録して、ポイントと経験値をためるアプリです。はじめに おうちの人が設定してください。</p>
+   <div class="fgrid">
+    <label>お子さんの名前（よびかた）<input type="text" id="fr-name" placeholder="れい：たろう" maxlength="12"></label>
+    <label>おうちの人の あんしょう番号（4けたの数字）<input type="text" inputmode="numeric" maxlength="4" id="fr-pin" placeholder="れい：0428"></label>
+    <label style="flex-direction:row;align-items:center;gap:10px;color:var(--ink);font-size:15px"><input type="checkbox" id="fr-tpl" checked style="width:22px;height:22px">おすすめの目標とごほうびを入れる（あとで直せます）</label>
+    <p id="fr-msg" style="color:var(--shu);margin:0;min-height:1.2em"></p>
+   </div>
+   <div class="acts"><button type="button" class="btn sub" id="fr-restore">バックアップから もどす</button><button type="button" class="btn" id="fr-ok">はじめる</button></div>
+   <p style="font-size:12px">記録はこの端末の中だけに保存され、どこにも送信されません。</p>`,
+  m=>{m.querySelector("#fr-ok").onclick=()=>{const name=m.querySelector("#fr-name").value.trim(),pin=m.querySelector("#fr-pin").value.trim();
+      if(!/^\d{4}$/.test(pin)){m.querySelector("#fr-msg").textContent="あんしょう番号は4けたの数字で入れてください";return}
+      S=freshState(name,pin,m.querySelector("#fr-tpl").checked);commit();closeModal();
+      modal(`<h3>じゅんび できました！</h3><p>自主練がおわったら「きょう」のカードをタッチしよう。<br>目標やごほうびは「おうちの人」→「せってい」で変えられます。</p><p style="font-size:13px">ホーム画面に追加すると アプリのように使えます（共有ボタン →「ホーム画面に追加」）。</p><div class="acts"><button class="btn" data-close>はじめる</button></div>`)};
+    m.querySelector("#fr-restore").onclick=()=>restoreMenu(true)},true)}
+function exportText(){return JSON.stringify({app:"keiko-note",v:1,exportedAt:new Date().toISOString(),data:S})}
+function importText(t){let o;try{o=JSON.parse(String(t).trim())}catch(e){return false}
+  const d=o&&o.app==="keiko-note"?o.data:o;if(!d||typeof d!=="object"||!d.settings||!Array.isArray(d.daily))return false;
+  S=normalize(d);commit();return true}
+function doBackup(){const t=exportText();const name="keiko-note_"+(S.settings.name||"backup")+"_"+today()+".json";
+  try{const b=new Blob([t],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);
+    S.lastBackup=today();commit();toast("バックアップを保存しました")}catch(e){toast("保存できませんでした。引っこしコードを使ってください")}}
+function copyCode(){const t=exportText();
+  const done=()=>{S.lastBackup=today();commit();toast("コピーしました。メモアプリなどに貼りつけて保存してください")};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(done,()=>showCode(t))}else showCode(t)}
+function showCode(t){modal(`<h3>引っこしコード</h3><p>下の文字をすべて選んでコピーし、メモなどに保存してください。</p><textarea readonly id="codeBox" style="min-height:160px;font-size:12px">${esc(t)}</textarea><div class="acts"><button class="btn" data-close>とじる</button></div>`,m=>{const b=m.querySelector("#codeBox");b.focus();b.select()})}
+function restoreMenu(fromFirst){
+  modal(`<h3>バックアップから もどす</h3><p>いまの記録は バックアップの内容に おきかわります。</p>
+   <div class="acts"><label class="btn" for="restoreFile2" style="cursor:pointer">ファイルをえらぶ</label><input type="file" id="restoreFile2" accept=".json,application/json,text/plain" hidden></div>
+   <label style="text-align:left;font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px">または 引っこしコードを貼りつけ<textarea id="pasteBox" placeholder='{"app":"keiko-note", ...'></textarea></label>
+   <p id="rs-msg" style="color:var(--shu);min-height:1.2em"></p>
+   <div class="acts"><button type="button" class="btn sub" id="rs-back">もどる</button><button type="button" class="btn" id="rs-ok">コードで もどす</button></div>`,
+  m=>{const fin=ok=>{if(ok){closeModal();toast("記録をもどしました")}else m.querySelector("#rs-msg").textContent="けいこノートのバックアップではないようです"};
+    m.querySelector("#restoreFile2").onchange=e=>readFile(e.target.files[0],fin);
+    m.querySelector("#rs-ok").onclick=()=>fin(importText(m.querySelector("#pasteBox").value));
+    m.querySelector("#rs-back").onclick=()=>{closeModal();if(fromFirst&&!lsLoad())firstRun()}})}
+function readFile(f,cb){if(!f)return;const r=new FileReader();r.onload=()=>cb(importText(r.result));r.onerror=()=>cb(false);r.readAsText(f)}
+
+/* ---------- svg bits ---------- */
+function flameSvg(on){const c1=on?"#d9412b":"#c3c9d6",c2=on?"#f6a21a":"#e3e7ef";
+  return `<svg viewBox="0 0 64 64"><path d="M32 4c4 10 16 16 16 32a16 16 0 0 1-32 0c0-8 4-12 8-16 0 6 3 9 6 10-2-10 2-18 2-26z" fill="${c1}"/><path d="M32 30c3 5 8 8 8 15a8 8 0 0 1-16 0c0-4 3-7 5-9 0 3 1 4 3 5-1-4 0-8 0-11z" fill="${c2}"/></svg>`}
+function hanamaru(){let p="";for(let i=0;i<12;i++){const a=i/12*Math.PI*2;p+=`<ellipse cx="${50+Math.cos(a)*36}" cy="${50+Math.sin(a)*36}" rx="9" ry="6" transform="rotate(${a*180/Math.PI} ${50+Math.cos(a)*36} ${50+Math.sin(a)*36})" fill="none" stroke="#d9412b" stroke-width="3"/>`}
+  return p+`<circle cx="50" cy="50" r="26" fill="none" stroke="#d9412b" stroke-width="5"/><path d="M38 50c4-10 20-10 24 0s-14 12-14 4" fill="none" stroke="#d9412b" stroke-width="4" stroke-linecap="round"/>`}
+
+/* ---------- modal / fx ---------- */
+function modal(html,init,locked){const r=$("#modalRoot");r.innerHTML=`<div class="ov" id="ov"><div class="modal" role="dialog" aria-modal="true">${html}</div></div>`;
+  r.querySelectorAll("[data-close]").forEach(b=>b.onclick=closeModal);if(!locked)$("#ov").addEventListener("click",e=>{if(e.target.id==="ov")closeModal()});
+  if(init)init(r.querySelector(".modal"));const f=r.querySelector("button");if(f)f.focus()}
+function closeModal(){$("#modalRoot").innerHTML=""}
+let toastT=0;function toast(t){let el=$(".toast");if(!el){el=document.createElement("div");el.className="toast";document.body.appendChild(el)}el.textContent=t;clearTimeout(toastT);toastT=setTimeout(()=>el.remove(),2600)}
+function floatAt(el,t){const r=el.getBoundingClientRect();const f=document.createElement("div");f.className="float";f.textContent=t;f.style.left=(r.left+r.width/2)+"px";f.style.top=(r.top+10)+"px";document.body.appendChild(f);setTimeout(()=>f.remove(),1000)}
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+function confetti(){if(reduce)return;const c=$("#fx"),x=c.getContext("2d");const W=c.width=innerWidth*devicePixelRatio,H=c.height=innerHeight*devicePixelRatio;
+  const cols=["#d9412b","#e8a317","#1d3461","#4b6aa3","#2f8f5b"];const ps=[...Array(120)].map(()=>({x:W/2+(Math.random()-.5)*W*.3,y:H*.35,vx:(Math.random()-.5)*28,vy:-Math.random()*26-8,r:(Math.random()*6+4)*devicePixelRatio,c:cols[Math.random()*5|0],a:Math.random()*6}));
+  let n=0;(function step(){x.clearRect(0,0,W,H);for(const p of ps){p.vy+=.9;p.x+=p.vx;p.y+=p.vy;p.a+=.2;x.save();x.translate(p.x,p.y);x.rotate(p.a);x.fillStyle=p.c;x.fillRect(-p.r,-p.r/2,p.r*2,p.r);x.restore()}if(++n<90)requestAnimationFrame(step);else x.clearRect(0,0,W,H)})()}
+let ac=null;function sound(k){try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();const seq={on:[[660,.08],[990,.12]],off:[[440,.08]],coin:[[988,.08],[1319,.2]],lvup:[[523,.1],[659,.1],[784,.1],[1047,.3]]}[k]||[];
+  let t=ac.currentTime;for(const[f,d]of seq){const o=ac.createOscillator(),g=ac.createGain();o.type="triangle";o.frequency.value=f;g.gain.setValueAtTime(.18,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d);t+=d*.8}}catch(e){}}
+
+/* ---------- parent pin ---------- */
+function askPin(){let v="";const draw=m=>{m.querySelector(".pin").innerHTML=[0,1,2,3].map(i=>`<i class="${i<v.length?"f":""}"></i>`).join("")};
+  modal(`<h3>おうちの人の<br>あんしょう番号</h3><div class="pin"></div><p id="pinMsg">4けたの数字を入れてください</p><div class="pad">${[1,2,3,4,5,6,7,8,9].map(n=>`<button type="button" data-k="${n}">${n}</button>`).join("")}<button type="button" data-close style="font-size:16px;font-family:var(--f-body);font-weight:900">やめる</button><button type="button" data-k="0">0</button><button type="button" data-k="bs" style="font-size:18px">←</button></div>`,
+  m=>{draw(m);m.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{const k=b.dataset.k;if(k==="bs")v=v.slice(0,-1);else if(v.length<4)v+=k;draw(m);
+    if(v.length===4){if(v===String(S.settings.pin||"1234")){parent=true;closeModal();render()}else{m.querySelector("#pinMsg").textContent="ちがう番号です";v="";setTimeout(()=>draw(m),250)}}})})}
+function editDay(date){const day=S.days[date]||{};
+  modal(`<h3>${jp(date)}</h3><p>できた目標をえらんでください</p><div class="list">${S.daily.map(g=>`<button type="button" class="goal ${day[g.id]?"done":""}" data-dd="${g.id}" style="min-height:70px"><div class="ic">${esc(g.icon)}</div><div class="tx"><div class="nm" style="font-size:16px">${esc(g.name)}</div></div><div class="hanko">でき<br>た！</div></button>`).join("")||"<p>まいにちの目標がありません</p>"}</div><div class="acts"><button class="btn" data-close>とじる</button></div>`,
+  m=>m.querySelectorAll("[data-dd]").forEach(b=>b.onclick=()=>{toggleDaily(b.dataset.dd,date,null);b.classList.toggle("done",!!(S.days[date]||{})[b.dataset.dd])}))}
+
+/* ---------- events ---------- */
+document.addEventListener("click",e=>{const t=e.target.closest("button,[data-editday]");if(!t)return;const d=t.dataset;
+  if(d.tab){tab=d.tab;render();scrollTo({top:0});return}
+  if(d.addmatch!==undefined){editMatch(null);return}
+  if(d.editmatch){editMatch(d.editmatch);return}
+  if(t.id==="gearBtn"){if(parent){parent=false;render()}else askPin();return}
+  if(d.daily){toggleDaily(d.daily,today(),t);return}
+  if(d.wplus){bumpWeekly(d.wplus,1,t);return}
+  if(d.wminus){bumpWeekly(d.wminus,-1,t);return}
+  if(d.bigon){setBig(d.bigon,true);return}
+  if(d.bigoff){setBig(d.bigoff,false);return}
+  if(d.buy){buyReward(d.buy);return}
+  if(d.tkuse||d.tkunuse){const k=S.tickets.find(x=>x.id===(d.tkuse||d.tkunuse));if(k){k.used=!!d.tkuse;commit()}return}
+  if(d.tkcancel){const k=S.tickets.find(x=>x.id===d.tkcancel);if(!k)return;modal(`<h3>チケットを取り消す？</h3><p>「${esc(k.name)}」の ${k.cost}pt を返します</p><div class="acts"><button class="btn sub" data-close>やめる</button><button class="btn red" id="mOk">取り消す</button></div>`,m=>m.querySelector("#mOk").onclick=()=>{S.tickets=S.tickets.filter(x=>x.id!==k.id);commit();closeModal()});return}
+  if(d.cal){let[y,m]=calMonth;m+=Number(d.cal);if(m<0){m=11;y--}if(m>11){m=0;y++}calMonth=[y,m];render();return}
+  if(d.editday){editDay(d.editday);return}
+  if(d.template!==undefined){for(const k of["daily","weekly","big","rewards"])S[k]=TEMPLATE[k].map(x=>Object.assign({id:uid()},x));commit();toast("おすすめの目標を入れました");return}
+  if(d.additem){const k=d.additem;const base={daily:{icon:"剣",name:"あたらしい目標",pt:10,xp:10},weekly:{icon:"剣",name:"あたらしい目標",target:3,pt:30,xp:30},big:{icon:"夢",name:"あたらしい目標",pt:150,xp:150},rewards:{icon:"🎁",name:"あたらしいごほうび",cost:50}}[k];S[k].push(Object.assign({id:uid()},base));commit();return}
+  if(d.delitem){const[k,id]=d.delitem.split(":");const g=S[k].find(x=>x.id===id);if(!g)return;
+    modal(`<h3>「${esc(g.name)}」をけす？</h3><p>これまでに もらったポイントは そのまま のこります</p><div class="acts"><button class="btn sub" data-close>やめる</button><button class="btn red" id="mOk">けす</button></div>`,m=>m.querySelector("#mOk").onclick=()=>{S[k]=S[k].filter(x=>x.id!==id);commit();closeModal()});return}
+  if(d.adjust!==undefined){const p=Math.round(Number($("#adj-pt").value));if(!Number.isFinite(p)||p===0){toast("pt を入れてください");return}S.adjust.unshift({id:uid(),date:today(),pt:p,note:$("#adj-note").value.trim()});commit();toast((p>0?"+":"")+p+"pt 入れました");return}
+  if(d.deladj){S.adjust=S.adjust.filter(a=>a.id!==d.deladj);commit();return}
+  if(d.backup!==undefined){doBackup();return}
+  if(d.copycode!==undefined){copyCode();return}
+  if(d.pastecode!==undefined){restoreMenu(false);return}
+  if(d.resetall!==undefined){modal(`<h3>すべての記録を消しますか？</h3><p>目標・ポイント・試合のきろくが すべて消えて、もとにもどせません。</p><div class="acts"><button class="btn sub" data-close>やめる</button><button class="btn red" id="mOk">消す</button></div>`,m=>m.querySelector("#mOk").onclick=()=>{try{localStorage.removeItem(LS)}catch(e){}S=normalize(null);parent=false;tab="today";closeModal();render();firstRun()});return}
+});
+document.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.dataset&&e.target.dataset.editday){e.preventDefault();editDay(e.target.dataset.editday)}});
+document.addEventListener("change",e=>{const el=e.target,d=el.dataset;
+  if(d.ed){const[k,id,f]=d.ed.split(":");const g=S[k].find(x=>x.id===id);if(!g)return;
+    if(f==="name"||f==="icon"){g[f]=el.value.trim()||(f==="icon"?"剣":g[f])}else g[f]=Math.max(f==="target"||f==="cost"?1:0,num(el.value,g[f]));commit();return}
+  if(el.id==="restoreFile"){readFile(el.files[0],ok=>toast(ok?"記録をもどしました":"けいこノートのバックアップではないようです"));el.value="";return}
+  if(d.set){const s=S.settings;if(d.set==="name")s.name=el.value.trim();else if(d.set==="pin"){if(/^\d{4}$/.test(el.value))s.pin=el.value;else{toast("あんしょう番号は4けたの数字です");el.value=s.pin;return}}else s[d.set]=num(el.value,s[d.set]);commit()}
+});
+
+/* ---------- boot ---------- */
+let lastDay=today();setInterval(()=>{if(today()!==lastDay){lastDay=today();render()}},60000);
+db=null;ref=null;
+const stored=lsLoad();
+$("#saveNote").textContent="記録はこの端末の中だけに保存されます。ときどき「せってい」からバックアップしてください。";
+if(stored){S=normalize(stored);loaded=true;render()}else{loaded=true;render();firstRun()}
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
+if("serviceWorker" in navigator&&location.protocol==="https:"){navigator.serviceWorker.register("sw.js").catch(()=>{})}
+})();
+</script>
+</body>
+</html>
