@@ -290,6 +290,15 @@ textarea{font:inherit;font-size:16px;padding:9px 10px;border:2px solid var(--lin
 .improw .grow{flex:1 1 140px}
 .wdx{font-size:13px;font-weight:700;color:var(--muted)}.wdx.bad{color:var(--shu)}
 .modal.wide{max-width:640px}
+
+/* siblings */
+.kidbar{display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 14px}
+.kid{display:flex;align-items:center;gap:8px;padding:5px 16px 5px 5px;border-radius:999px;background:var(--card);border:3px solid var(--line);font-weight:900;font-size:16px;min-height:50px;color:var(--ink)}
+.kid .av{width:36px;height:36px;border-radius:50%;background:var(--kc);color:#fff;display:grid;place-items:center;font-size:17px;flex:none}
+.kid .lv{font-size:12px;color:var(--muted);font-weight:700}
+.kid.on{border-color:var(--kc);box-shadow:inset 0 0 0 2px var(--kc)}
+.kid.add{padding:5px 18px;color:var(--muted);border-style:dashed}
+.brand .mon{background:var(--kid,var(--ai))}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -299,6 +308,7 @@ textarea{font:inherit;font-size:16px;padding:9px 10px;border:2px solid var(--lin
     <div class="brand"><div class="mon">剣</div><div><h1 id="hName">けいこノート</h1><small id="hDate"></small></div></div>
     <button class="gear" id="gearBtn" type="button">おうちの人</button>
   </header>
+  <div id="kidbar"></div>
   <div id="pbar"></div>
   <main id="view"><div class="empty-state">よみこみ中…</div></main>
   <div class="note" id="saveNote"></div>
@@ -367,6 +377,56 @@ const TEMPLATE={
   rewards:[{icon:"🎮",name:"ゲーム 30分",cost:50},{icon:"🎮",name:"ゲーム 1時間",cost:90},{icon:"🍪",name:"おかし ぞうりょう",cost:30},{icon:"🍛",name:"すきな夕ごはんリクエスト",cost:120}]
 };
 let S=normalize(null);
+/* ---------- siblings: up to 3 children, each with their own notebook ---------- */
+let ROOT={v:2,active:"k1",order:["k1"],kids:{k1:S}};
+const KID_COLORS=["#1d3461","#d9412b","#2f8f5b"];
+const MAX_KIDS=3;
+function normalizeRoot(o){
+  if(o&&typeof o==="object"&&o.kids&&typeof o.kids==="object"){
+    const ids=(Array.isArray(o.order)?o.order:Object.keys(o.kids)).map(String).filter((x,i,a)=>/^[A-Za-z0-9_-]{1,40}$/.test(x)&&a.indexOf(x)===i);
+    const kids={};for(const id of ids){if(Object.keys(kids).length>=MAX_KIDS)break;if(o.kids[id]&&typeof o.kids[id]==="object")kids[id]=normalize(o.kids[id])}
+    const order=Object.keys(kids);
+    if(!order.length)return{v:2,active:"k1",order:["k1"],kids:{k1:normalize(null)}};
+    let active=String(o.active||"");try{const a=localStorage.getItem(LS+"-active");if(a&&kids[a])active=a}catch(e){}
+    if(!kids[active])active=order[0];
+    const pin=kids[active].settings.pin;for(const id of order)kids[id].settings.pin=pin;
+    return{v:2,active,order,kids}}
+  return{v:2,active:"k1",order:["k1"],kids:{k1:normalize(o)}}}
+function useRoot(r){ROOT=r;S=ROOT.kids[ROOT.active];try{document.documentElement.style.setProperty("--kid",KID_COLORS[ROOT.order.indexOf(ROOT.active)]||KID_COLORS[0])}catch(e){}}
+function kidColor(id){return KID_COLORS[ROOT.order.indexOf(id)]||KID_COLORS[0]}
+function kidbarHtml(){if(ROOT.order.length<2&&!parent)return"";
+  return `<div class="kidbar">${ROOT.order.map(id=>{const k=ROOT.kids[id];const nm=k.settings.name||"なまえなし";const lv=levelInfo(totalsFor(k).xp).lv;
+    return `<button type="button" class="kid ${id===ROOT.active?"on":""}" data-kid="${id}" style="--kc:${kidColor(id)}" aria-pressed="${id===ROOT.active}"><span class="av">${esc([...nm][0])}</span><span>${esc(nm)}<span class="lv"> Lv${lv}</span></span></button>`}).join("")}
+   ${parent&&ROOT.order.length<MAX_KIDS?`<button type="button" class="kid add" data-addkid>＋ きょうだいを追加</button>`:""}</div>`}
+function totalsFor(k){const keep=S;S=k;try{return totals()}finally{S=keep}}
+function switchKid(id){if(!ROOT.kids[id]||id===ROOT.active)return;ROOT.kids[ROOT.active]=S;ROOT.active=id;useRoot(ROOT);
+  try{localStorage.setItem(LS+"-active",id)}catch(e){}
+  selDay=null;noteMonth=null;calMonth=null;noteFilter="open";sound("on");render();scrollTo({top:0});toast((S.settings.name||"")+" の ノートに きりかえたよ")}
+function addKid(){if(ROOT.order.length>=MAX_KIDS){toast("3人までです");return}
+  const from=S.settings.name||"いまの子";
+  modal(`<h3>きょうだいを追加</h3><div class="fgrid">
+    <label>名前（よびかた）<input type="text" id="ak-name" maxlength="12" placeholder="れい：じろう"></label>
+    <label style="flex-direction:row;align-items:center;gap:10px;color:var(--ink);font-size:15px"><input type="checkbox" id="ak-goal" checked style="width:22px;height:22px">${esc(from)}と同じ 目標・ごほうびで はじめる</label>
+    <label style="flex-direction:row;align-items:center;gap:10px;color:var(--ink);font-size:15px"><input type="checkbox" id="ak-sched" checked style="width:22px;height:22px">練習の予定も コピーする（同じ教室のとき）</label>
+    <p style="margin:0;font-size:13px">ポイント・レベル・先生メモ・試合のきろくは、ひとりずつ べつべつです。</p>
+    <p id="ak-msg" style="color:var(--shu);margin:0;min-height:1.2em"></p></div>
+   <div class="acts"><button type="button" class="btn sub" data-close>やめる</button><button type="button" class="btn" id="ak-ok">追加する</button></div>`,
+  m=>m.querySelector("#ak-ok").onclick=()=>{const name=m.querySelector("#ak-name").value.trim();if(!name){m.querySelector("#ak-msg").textContent="名前を入れてください";return}
+    const n=normalize(null);n.settings=Object.assign({},S.settings,{name});
+    const cp=a=>JSON.parse(JSON.stringify(a));
+    if(m.querySelector("#ak-goal").checked){n.daily=cp(S.daily);n.weekly=cp(S.weekly);n.big=cp(S.big);n.rewards=cp(S.rewards)}
+    else for(const k of["daily","weekly","big","rewards"])n[k]=TEMPLATE[k].map(x=>Object.assign({id:uid()},x));
+    if(m.querySelector("#ak-sched").checked)n.schedule=cp(S.schedule);
+    const id="k"+uid();ROOT.kids[ROOT.active]=S;ROOT.kids[id]=normalize(n);ROOT.order.push(id);
+    closeModal();const was=ROOT.active;switchKid(id);if(ROOT.active===was)render();commit();toast(name+" を追加しました")})}
+function removeKid(id){const k=ROOT.kids[id];if(!k||ROOT.order.length<2)return;const nm=k.settings.name||"なまえなし";
+  modal(`<h3>${esc(nm)} のノートを消しますか？</h3><p>${esc(nm)} のポイント・きろく・先生メモが すべて消えて、もとにもどせません。</p><div class="acts"><button class="btn sub" data-close>やめる</button><button class="btn red" id="mOk">消す</button></div>`,
+  m=>m.querySelector("#mOk").onclick=()=>{delete ROOT.kids[id];ROOT.order=ROOT.order.filter(x=>x!==id);if(ROOT.active===id){ROOT.active=ROOT.order[0];try{localStorage.setItem(LS+"-active",ROOT.active)}catch(e){}}
+    useRoot(ROOT);closeModal();commit();toast(nm+" のノートを消しました")})}
+function kidsPanel(){return `<div class="panel"><h3>きょうだい（3人まで）</h3><p class="help">画面の上の名前ボタンで、だれのノートか きりかえます。名前は ノートを開いてから「基本」で変えられます。</p>
+  ${ROOT.order.map(id=>`<div class="erow" style="grid-template-columns:auto 1fr auto"><span class="kid" style="--kc:${kidColor(id)};min-height:0;border:0;padding:0"><span class="av">${esc([...(ROOT.kids[id].settings.name||"?")][0])}</span></span><span style="font-weight:900">${esc(ROOT.kids[id].settings.name||"なまえなし")}${id===ROOT.active?" <small style='color:var(--muted)'>（いま開いている）</small>":""}</span>${ROOT.order.length>1?`<button type="button" class="del" data-delkid="${id}">けす</button>`:""}</div>`).join("")}
+  ${ROOT.order.length<MAX_KIDS?`<div style="margin-top:10px"><button type="button" class="btn sub sm" data-addkid>＋ きょうだいを追加</button></div>`:""}</div>`}
+
 let loaded=false, db=null, ref=null, dirty=false, saving=false, saveTimer=0, parent=false, tab="today", calMonth=null;
 
 function lsLoad(){try{const t=localStorage.getItem(LS);return t?JSON.parse(t):null}catch(e){return null}}
@@ -374,7 +434,7 @@ function lsSave(o){try{localStorage.setItem(LS,JSON.stringify(o))}catch(e){}}
 
 function commit(){dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(flush,350);render()}
 async function flush(){if(saving)return;saving=true;
-  while(dirty){dirty=false;S.updatedAt=new Date().toISOString();const snap=JSON.parse(JSON.stringify(S));lsSave(snap);
+  while(dirty){dirty=false;ROOT.kids[ROOT.active]=S;S.updatedAt=new Date().toISOString();ROOT.updatedAt=S.updatedAt;const snap=JSON.parse(JSON.stringify(ROOT));lsSave(snap);
     if(ref){try{await ref.set(snap)}catch(e){
       if(e&&e.code==="unavailable"){await new Promise(r=>setTimeout(r,800+Math.random()*800));try{await ref.set(snap)}catch(e2){toast("ほぞんできませんでした。通信をたしかめてね")}}
       else if(e&&e.code==="invalid_argument"){toast("この画面では書きこみできません（見るだけモード）")}
@@ -734,6 +794,7 @@ function renderTabs(){const list=parent?[...TABS,["set","設","せってい"]]:T
 function render(){
   if(!parent&&tab==="set")tab="today";
   const nm=S.settings.name?S.settings.name+"の けいこノート":"けいこノート";$("#hName").textContent=nm;
+  $("#kidbar").innerHTML=kidbarHtml();
   $("#hDate").textContent=jp(today());
   $("#gearBtn").textContent=parent?"おうちの人モード：おわる":"おうちの人";$("#gearBtn").classList.toggle("on",parent);
   $("#pbar").innerHTML=parent?`<div class="parentbar"><span>おうちの人モード中：目標の編集・大きな目標の達成・チケットの使用ずみ・過去の日の修正ができます</span></div>`:"";
@@ -827,6 +888,7 @@ function editRows(kind){const L=S[kind];
 function vSet(){const s=S.settings;const empty=!S.daily.length&&!S.weekly.length&&!S.big.length&&!S.rewards.length;
   return `<div class="sec"><h2>せってい（おうちの人）</h2></div><div class="set">
   ${empty?`<div class="panel"><h3>まずは おすすめの目標を入れる</h3><p class="help">素振り・足さばき・面打ちなどの目標と、ゲーム時間・おかし増量のごほうびをまとめて入れます。あとから自由に直せます。</p><button type="button" class="btn" data-template>おすすめを入れる</button></div>`:""}
+  ${kidsPanel()}
   <div class="panel"><h3>基本</h3><div class="row">
    <label style="flex:1 1 200px;font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px">お子さんの名前<input type="text" id="s-name" data-set="name" value="${esc(s.name)}" placeholder="れい：たろう"></label>
    <label style="font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px">あんしょう番号（4けた）<input type="text" inputmode="numeric" maxlength="4" id="s-pin" data-set="pin" value="${esc(s.pin)}" style="width:110px"></label></div>
@@ -868,13 +930,15 @@ function firstRun(){
    <p style="font-size:12px">記録はこの端末の中だけに保存され、どこにも送信されません。</p>`,
   m=>{m.querySelector("#fr-ok").onclick=()=>{const name=m.querySelector("#fr-name").value.trim(),pin=m.querySelector("#fr-pin").value.trim();
       if(!/^\d{4}$/.test(pin)){m.querySelector("#fr-msg").textContent="あんしょう番号は4けたの数字で入れてください";return}
-      S=freshState(name,pin,m.querySelector("#fr-tpl").checked);commit();closeModal();
+      useRoot(normalizeRoot(freshState(name,pin,m.querySelector("#fr-tpl").checked)));commit();closeModal();
       modal(`<h3>じゅんび できました！</h3><p>自主練がおわったら「きょう」のカードをタッチしよう。<br>目標やごほうびは「おうちの人」→「せってい」で変えられます。</p><p style="font-size:13px">ホーム画面に追加すると アプリのように使えます（共有ボタン →「ホーム画面に追加」）。</p><div class="acts"><button class="btn" data-close id="frDone">はじめる</button></div>`,mm=>{mm.querySelector("#frDone").addEventListener("click",()=>setTimeout(checkShareHash,50))})};
     m.querySelector("#fr-restore").onclick=()=>restoreMenu(true)},true)}
-function exportText(){return JSON.stringify({app:"keiko-note",v:1,exportedAt:new Date().toISOString(),data:S})}
+function exportText(){return JSON.stringify({app:"keiko-note",v:1,exportedAt:new Date().toISOString(),data:(ROOT.kids[ROOT.active]=S,ROOT)})}
 function importText(t){let o;try{o=JSON.parse(String(t).trim())}catch(e){return false}
-  const d=o&&o.app==="keiko-note"?o.data:o;if(!d||typeof d!=="object"||!d.settings||!Array.isArray(d.daily))return false;
-  S=normalize(d);commit();return true}
+  const d=o&&o.app==="keiko-note"?o.data:o;if(!d||typeof d!=="object")return false;
+  if(d.kids){useRoot(normalizeRoot(d));commit();return true}
+  if(!d.settings||!Array.isArray(d.daily))return false;
+  const one=normalize(d);one.settings.pin=S.settings.pin;ROOT.kids[ROOT.active]=one;useRoot(ROOT);commit();return true}
 function doBackup(){const t=exportText();const name="keiko-note_"+(S.settings.name||"backup")+"_"+today()+".json";
   try{const b=new Blob([t],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);
     S.lastBackup=today();commit();toast("バックアップを保存しました")}catch(e){toast("保存できませんでした。引っこしコードを使ってください")}}
@@ -926,6 +990,9 @@ function editDay(date){const day=S.days[date]||{};
 /* ---------- events ---------- */
 document.addEventListener("click",e=>{const t=e.target.closest("button,[data-editday],[data-nday]");if(!t)return;const d=t.dataset;
   if(d.tab){tab=d.tab;render();scrollTo({top:0});return}
+  if(d.kid){switchKid(d.kid);return}
+  if(d.addkid!==undefined){addKid();return}
+  if(d.delkid){removeKid(d.delkid);return}
   if(d.addmatch!==undefined){editMatch(null);return}
   if(d.import!==undefined){openImport();return}
   if(d.share!==undefined){shareSchedule();return}
@@ -959,14 +1026,14 @@ document.addEventListener("click",e=>{const t=e.target.closest("button,[data-edi
   if(d.backup!==undefined){doBackup();return}
   if(d.copycode!==undefined){copyCode();return}
   if(d.pastecode!==undefined){restoreMenu(false);return}
-  if(d.resetall!==undefined){modal(`<h3>すべての記録を消しますか？</h3><p>目標・ポイント・試合のきろくが すべて消えて、もとにもどせません。</p><div class="acts"><button class="btn sub" data-close>やめる</button><button class="btn red" id="mOk">消す</button></div>`,m=>m.querySelector("#mOk").onclick=()=>{try{localStorage.removeItem(LS)}catch(e){}S=normalize(null);parent=false;tab="today";closeModal();render();firstRun()});return}
+  if(d.resetall!==undefined){modal(`<h3>すべての記録を消しますか？</h3><p>目標・ポイント・試合のきろくが すべて消えて、もとにもどせません。</p><div class="acts"><button class="btn sub" data-close>やめる</button><button class="btn red" id="mOk">消す</button></div>`,m=>m.querySelector("#mOk").onclick=()=>{try{localStorage.removeItem(LS);localStorage.removeItem(LS+"-active")}catch(e){}useRoot(normalizeRoot(null));parent=false;tab="today";closeModal();render();firstRun()});return}
 });
 document.addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.dataset&&e.target.dataset.editday){e.preventDefault();editDay(e.target.dataset.editday)}if((e.key==="Enter"||e.key===" ")&&e.target.dataset&&e.target.dataset.nday){e.preventDefault();e.target.click()}});
 document.addEventListener("change",e=>{const el=e.target,d=el.dataset;
   if(d.ed){const[k,id,f]=d.ed.split(":");const g=S[k].find(x=>x.id===id);if(!g)return;
     if(f==="name"||f==="icon"){g[f]=el.value.trim()||(f==="icon"?"剣":g[f])}else g[f]=Math.max(f==="target"||f==="cost"?1:0,num(el.value,g[f]));commit();return}
   if(el.id==="restoreFile"){readFile(el.files[0],ok=>toast(ok?"記録をもどしました":"けいこノートのバックアップではないようです"));el.value="";return}
-  if(d.set){const s=S.settings;if(d.set==="name")s.name=el.value.trim();else if(d.set==="pin"){if(/^\d{4}$/.test(el.value))s.pin=el.value;else{toast("あんしょう番号は4けたの数字です");el.value=s.pin;return}}else s[d.set]=num(el.value,s[d.set]);commit()}
+  if(d.set){const s=S.settings;if(d.set==="name")s.name=el.value.trim();else if(d.set==="pin"){if(/^\d{4}$/.test(el.value)){for(const id of ROOT.order)ROOT.kids[id].settings.pin=el.value;s.pin=el.value}else{toast("あんしょう番号は4けたの数字です");el.value=s.pin;return}}else s[d.set]=num(el.value,s[d.set]);commit()}
 });
 
 /* ---------- boot ---------- */
@@ -974,7 +1041,7 @@ let lastDay=today();setInterval(()=>{if(today()!==lastDay){lastDay=today();rende
 db=null;ref=null;
 const stored=lsLoad();
 $("#saveNote").textContent="記録はこの端末の中だけに保存されます。ときどき「せってい」からバックアップしてください。";
-if(stored){S=normalize(stored);loaded=true;render();checkShareHash()}else{loaded=true;render();firstRun()}
+if(stored){useRoot(normalizeRoot(stored));loaded=true;render();checkShareHash()}else{loaded=true;render();firstRun()}
 addEventListener("hashchange",()=>{if(lsLoad())checkShareHash()});
 try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
 if("serviceWorker" in navigator&&location.protocol==="https:"){navigator.serviceWorker.register("sw.js").catch(()=>{})}
