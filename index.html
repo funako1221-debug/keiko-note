@@ -595,29 +595,114 @@ function loadPdfJs(){if(window.pdfjsLib)return Promise.resolve(window.pdfjsLib);
   return pdfjsP}
 const RADICAL={"⺠":"民","⻄":"西","⻑":"長","⻘":"青","⻝":"食","⻤":"鬼","⻩":"黄","⻁":"虎","⻨":"麦","⻌":"辶","⻂":"衤","⺟":"母","⺣":"火"};
 const NK=s=>String(s||"").normalize("NFKC").replace(/[⺀-⻿]/g,c=>RADICAL[c]||c);
-async function pdfToText(file){const lib=await loadPdfJs();const doc=await lib.getDocument({data:await file.arrayBuffer()}).promise;const out=[];
-  for(let p=1;p<=Math.min(doc.numPages,6);p++){const page=await doc.getPage(p);const vp=page.getViewport({scale:1});const tc=await page.getTextContent();
-    const raw=tc.items.filter(i=>i.str&&i.str.trim()).map(i=>({s:NK(i.str),x:i.transform[4],y:i.transform[5],w:i.width||0,h:Math.abs(i.transform[3])||i.height||10}));
-    /* 細切れの文字を、同じ行で すき間のないものどうし つなげて「セル」にする */
-    const byY=[];for(const it of [...raw].sort((a,b)=>b.y-a.y||a.x-b.x)){const r=byY.find(r=>Math.abs(r.y-it.y)<=Math.max(2,it.h*0.25));if(r)r.items.push(it);else byY.push({y:it.y,items:[it]})}
+/* 位置つきの文字（PDF・画像の読みとり結果）を、表の「日にち」ごとの行にまとめる */
+function layoutToText(raw,width){const out=[];
+    const byY=[];for(const it of [...raw].sort((a,b)=>b.y-a.y||a.x-b.x)){const r=byY.find(r=>Math.abs(r.y-it.y)<=Math.max(2,it.h*0.3));if(r)r.items.push(it);else byY.push({y:it.y,items:[it]})}
     const items=[];for(const r of byY){const L=r.items.sort((a,b)=>a.x-b.x);let c=null;
-      for(const it of L){if(c&&it.x-(c.x+c.w)<Math.max(3,it.h*0.9)){c.s+=it.s;c.w=it.x+it.w-c.x}else{if(c)items.push(c);c={s:it.s,x:it.x,y:r.y,w:it.w,h:it.h}}}if(c)items.push(c)}
+      for(const it of L){if(c&&it.x-(c.x+c.w)<Math.max(3,it.h*0.9)){c.s+=it.s;c.w=it.x+it.w-c.x;c.h=Math.max(c.h,it.h)}else{if(c)items.push(c);c={s:it.s,x:it.x,y:r.y,w:it.w,h:it.h}}}if(c)items.push(c)}
     for(const it of items)it.s=it.s.replace(/\s+/g," ").trim();
-    const lineup=list=>{const L=[...list].sort((a,b)=>b.y-a.y||a.x-b.x);const rows=[];for(const it of L){const r=rows.find(r=>Math.abs(r.y-it.y)<=3);if(r)r.items.push(it);else rows.push({y:it.y,items:[it]})}
+    const lineup=list=>{const L=[...list].sort((a,b)=>b.y-a.y||a.x-b.x);const rows=[];for(const it of L){const r=rows.find(r=>Math.abs(r.y-it.y)<=Math.max(3,it.h*0.4));if(r)r.items.push(it);else rows.push({y:it.y,items:[it]})}
       return rows.map(r=>r.items.sort((a,b)=>a.x-b.x).map(i=>i.s).join(" "))};
-    const marks=items.filter(i=>/^\d{1,2}\s*日$/.test(i.s)&&i.x<vp.width*0.3).sort((a,b)=>b.y-a.y);
-    if(marks.length<3){out.push(...lineup(items));continue}
+    const marks=items.filter(i=>/^\d{1,2}\s*日$/.test(i.s)&&i.x<width*0.3).sort((a,b)=>b.y-a.y);
+    if(marks.length<3){out.push(...lineup(items));return out}
     const gaps=marks.slice(1).map((m,i)=>marks[i].y-m.y).filter(g=>g>2).sort((a,b)=>a-b);const g=gaps.length?gaps[0]:20;const lim=Math.max(g*1.1,12);
     const groups=marks.map(m=>({m,items:[]}));const head=[];
     for(const it of items){if(marks.includes(it))continue;let best=null,bd=1e9;for(const gr of groups){const d=Math.abs(gr.m.y-it.y);if(d<bd){bd=d;best=gr}}
       if(it.y>marks[0].y+lim)head.push(it);else if(bd<=lim)best.items.push(it)}
     out.push(...lineup(head));
     for(const gr of groups){out.push(gr.m.s.replace(/\s/g,""));out.push(...lineup(gr.items))}
-    out.push("※")}
+    out.push("※");return out}
+async function pdfToText(file){const lib=await loadPdfJs();const doc=await lib.getDocument({data:await file.arrayBuffer()}).promise;const out=[];
+  for(let p=1;p<=Math.min(doc.numPages,6);p++){const page=await doc.getPage(p);const vp=page.getViewport({scale:1});const tc=await page.getTextContent();
+    const raw=tc.items.filter(i=>i.str&&i.str.trim()).map(i=>({s:NK(i.str),x:i.transform[4],y:i.transform[5],w:i.width||0,h:Math.abs(i.transform[3])||i.height||10}));
+    out.push(...layoutToText(raw,vp.width))}
   return out.join("\n")}
+/* ---------- 画像の予定表 ---------- */
+const TESS="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+let tessP=null;
+function loadTess(){if(window.Tesseract)return Promise.resolve(window.Tesseract);
+  if(!tessP)tessP=new Promise((ok,ng)=>{const s=document.createElement("script");s.src=TESS;s.onload=()=>window.Tesseract?ok(window.Tesseract):ng(new Error("load"));s.onerror=()=>{tessP=null;ng(new Error("load"))};document.head.appendChild(s)});
+  return tessP}
+function fileToCanvas(file){return new Promise((ok,ng)=>{const url=URL.createObjectURL(file);const img=new Image();
+  img.onload=()=>{const sc=Math.min(3,Math.max(1,2000/img.naturalWidth));const c=document.createElement("canvas");c.width=Math.round(img.naturalWidth*sc);c.height=Math.round(img.naturalHeight*sc);
+    const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.imageSmoothingQuality="high";x.drawImage(img,0,0,c.width,c.height);
+    const d=x.getImageData(0,0,c.width,c.height),p=d.data;for(let i=0;i<p.length;i+=4){let g=0.299*p[i]+0.587*p[i+1]+0.114*p[i+2];g=g<150?Math.max(0,g*0.6):Math.min(255,g*1.15+20);p[i]=p[i+1]=p[i+2]=g}x.putImageData(d,0,0);
+    URL.revokeObjectURL(url);ok(c)};img.onerror=()=>{URL.revokeObjectURL(url);ng(new Error("img"))};img.src=url})}
+/* 表の罫線を探して、マスごとに読む（表でなければ ページ全体を読む） */
+function detectGrid(canvas){const W=canvas.width,H=canvas.height;const p=canvas.getContext("2d").getImageData(0,0,W,H).data;
+  const dark=(x,y)=>p[(y*W+x)*4]<140;
+  const group=(arr,minGap)=>{const out=[];let s=null,e=null;for(const v of arr){if(s===null){s=e=v}else if(v-e<=2){e=v}else{out.push((s+e)/2);s=e=v}}if(s!==null)out.push((s+e)/2);
+    return out.filter((v,i,a)=>i===0||v-a[i-1]>=minGap)};
+  const hs=[];for(let y=0;y<H;y++){let n=0;for(let x=0;x<W;x+=2)if(dark(x,y))n++;if(n*2>W*0.45)hs.push(y)}
+  const ys=group(hs,14);if(ys.length<4)return null;
+  const top=Math.round(ys[0]),bot=Math.round(ys[ys.length-1]);
+  const vs=[];for(let x=0;x<W;x++){let n=0;for(let y=top;y<bot;y+=2)if(dark(x,y))n++;if(n*2>(bot-top)*0.55)vs.push(x)}
+  const xs=group(vs,14);if(xs.length<3)return null;
+  return{xs,ys}}
+function cropCell(canvas,l,t,w,h){const c=document.createElement("canvas");const sc=h<60?2:1;c.width=Math.max(1,Math.round(w*sc))+20;c.height=Math.max(1,Math.round(h*sc))+20;
+  const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.drawImage(canvas,l,t,w,h,10,10,w*sc,h*sc);return c}
+async function ocrImageToText(file,progress){const T=await loadTess();const canvas=await fileToCanvas(file);
+  progress("load",0);
+  const w=await T.createWorker("jpn",1,{logger:m=>{if(m&&m.status&&/load|init/.test(m.status)&&typeof m.progress==="number")progress("load",m.progress)}});
+  const rd=async c=>NK((await w.recognize(c)).data.text||"").replace(/[|｜]/g," ").trim();
+  try{const grid=detectGrid(canvas);
+    if(!grid){progress("read",0.5);const {data}=await w.recognize(canvas);const H=canvas.height;
+      const raw=(data.words||[]).filter(x=>x.text&&x.text.trim()&&x.confidence>15).map(x=>({s:NK(x.text).replace(/\s+/g,""),x:x.bbox.x0,y:H-(x.bbox.y0+x.bbox.y1)/2,w:x.bbox.x1-x.bbox.x0,h:x.bbox.y1-x.bbox.y0}));
+      return layoutToText(raw,canvas.width).join("\n")}
+    const {xs,ys}=grid;const out=[];
+    /* 日本語の文字のあいだに入った空白や、読みまちがえやすい記号を ととのえる */
+    const clean=t=>NK(t).replace(/[|｜_]/g," ").replace(/([\u3040-\u30ff\u4e00-\u9fff（）()・])[ \t]+(?=[\u3040-\u30ff\u4e00-\u9fff（）()・])/g,"$1").replace(/(\d)\s*:\s*(\d)/g,"$1:$2").replace(/(\d)[ \t]+(?=\d{1,}:)/g,"$1").replace(/[-ー一]{3,}/g," ").trim();
+    await w.setParameters({tessedit_pageseg_mode:"6"});
+    if(ys[0]>30)out.push(await rd(cropCell(canvas,0,0,canvas.width,Math.round(ys[0])-2)));
+    const cell=(r,c)=>cropCell(canvas,Math.round(xs[c])+4,Math.round(ys[r])+4,Math.round(xs[c+1]-xs[c])-8,Math.round(ys[r+1]-ys[r])-8);
+    /* 見出しの行を読んで、先生・参加者など「人の名前の列」は 読まずに とばす */
+    const nc=xs.length-1;
+    const head=[];for(let c=0;c<nc;c++)head.push(clean(await rd(cell(0,c))).replace(/\s/g,""));
+    const find=re=>head.findIndex(t=>re.test(t));
+    const cTime=find(/時間|時刻/),cPlace=find(/場所|会場/),cWd=find(/曜/);
+    let cDay=head.findIndex((t,i)=>i!==cWd&&/^日$|日付|月日|^日/.test(t));if(cDay<0&&cTime>0)cDay=0;
+    if(cTime<0||cDay<0){/* 見出しがわからない表：全部のマスを読んで 文章として解析（人名の列は とばせないので注意） */
+      const skip=new Set();head.forEach((t,c)=>{if(/先生|指導|当番|担当|参加|受験|氏名|名前|連絡|電話/.test(t))skip.add(c)});
+      for(let r=1;r<ys.length-1;r++){const cells=[];for(let c=0;c<nc;c++){if(skip.has(c))continue;cells.push(clean(await rd(cell(r,c))))}progress("read",r/(ys.length-1));
+        const dm=(cells[0]||"").replace(/\s/g,"").match(/(\d{1,2})[日曰目]?/);out.push(dm?dm[1]+"日":cells[0]||"");for(const t of cells.slice(1))for(const l of t.split(/\n+/))if(l.trim())out.push(l.trim())}
+      out.push("※");return out.join("\n")}
+    /* 見出しがわかる表：日にち・曜日・時間・場所の列だけ読む（先生の名前などの列は 読まない） */
+    const rows=[];const R=ys.length-1;
+    for(let r=1;r<R;r++){progress("read",(r-1)/(R-1));
+      const dayT=clean(await rd(cell(r,cDay))).replace(/\s/g,"");const dm=dayT.match(/(\d{1,2})(?=[日曰目]|$)/)||dayT.match(/(\d{1,2})/);if(!dm)continue;
+      const d=Number(dm[1]);if(d<1||d>31)continue;
+      const wdT=cWd>=0?clean(await rd(cell(r,cWd))):"";const wm=wdT.match(/(月|火|水|木|金|土|日)/);
+      const timeT=clean(await rd(cell(r,cTime))).replace(/\n+/g," ");
+      const placeT=cPlace>=0?clean(await rd(cell(r,cPlace))).replace(/\n+/g," ").replace(/\s{2,}/g," ").trim():"";
+      const place=placeT.replace(/[^\u3040-\u30ff\u4e00-\u9fff（）()A-Za-z0-9・ー\- ]/g,"").trim().slice(0,60);
+      let m,prev=0;TIME_RE.lastIndex=0;const found=[];
+      while((m=TIME_RE.exec(timeT))){const seg=timeT.slice(prev,m.index);const lab=((seg.match(/([^\s:]{1,12})\s*:?\s*$/)||[])[1]||"").replace(/[():（）]/g,"");
+        found.push({start:pad2(Number(m[1]))+":"+m[2],end:pad2(Number(m[3]))+":"+m[4],label:lab});prev=m.index+m[0].length}
+      const base={mo:0,d,wd:wm?wm[1]:"",place};
+      if(found.length)for(const f of found)rows.push(Object.assign({},base,f,{note:"",label:/全員|全体/.test(f.label)?"全員":f.label}));
+      else{const ev=timeT.replace(/[^\u3040-\u30ff\u4e00-\u9fff ]/g,"").replace(/\s+/g," ").trim().slice(0,30);if(ev||place)rows.push(Object.assign({},base,{start:"",end:"",label:"",note:ev}))}}
+    progress("read",1);
+    return{head:out.join("\n"),rows}}
+  finally{try{await w.terminate()}catch(e){}}}
+/* claude.ai の中で開いているときは、Claude に画像を読んでもらう（使う人の Claude を使い、確認画面が出る） */
+async function claudeImageRows(file){if(!(window.claude&&window.claude.use))return null;let s=null;try{s=await window.claude.use("sample")}catch(e){}if(!s)return null;
+  const lim=await s.limits().catch(()=>null);if(!lim||!lim.images)return null;
+  const prompt=`この画像は、子どもの剣道教室の練習予定表です。練習と行事の予定を取り出して、JSONだけで答えてください。
+ルール:
+- 人の名前（先生・指導当番・受験者・参加者・館長など）、電話番号、住所、URL、メールアドレス、金額は、どの欄にも絶対に入れない。
+- 1つの日に年齢別の時間わくがあるときは、わくごとに別の行にして label に区分名（例: 小・中学生、高校生以上、全員）を入れる。区分がなければ label は空。
+- place は施設名だけ（例: 第三錦林小学校（半面コート））。
+- 時間がない行事は start と end を空にして、note に行事名（例: 右武祭、昇段審査）を書く。
+- 年月は表にあればそれを使う（令和N年は 2018+N 年。「年度」表記で 1〜3月なら翌年）。なければ ${today().slice(0,4)} 年。
+- 時刻は 24時間の "HH:MM"。日付は "YYYY-MM-DD"。
+形式の例: {"rows":[{"date":"2026-11-07","start":"18:00","end":"19:30","place":"第三錦林小学校","note":"","label":"小・中学生"}]}`;
+  const o=await s.json(prompt,{images:[file]});
+  const okd=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v));const okt=v=>{const m=String(v||"").match(/^(\d{1,2}):(\d{2})$/);return m?pad2(Number(m[1]))+":"+m[2]:""};
+  const rows=(o&&Array.isArray(o.rows)?o.rows:[]).filter(r=>r&&okd(r.date)).slice(0,120).map(r=>{const d=parse(r.date);return{fixed:r.date,mo:d.getMonth()+1,d:d.getDate(),wd:"",start:okt(r.start),end:okt(r.end),label:String(r.label||"").slice(0,20),place:String(r.place||"").slice(0,60),note:String(r.note||"").slice(0,40)}});
+  return rows}
 const FAC=/(体育館|小学校|中学校|高校|学校|道場|武道|センター|殿|署|庁舎|公園|会館|ホール|館|コート|アリーナ|スポーツ|グラウンド|ジム|市民|区民|体育室|武道場)/;
 const WDRE=/\((月|火|水|木|金|土|日)(曜日?)?\)?|\(祝[^)]*\)/;
-const TIME_RE=/(\d{1,2}):(\d{2})\s*[~\-ー〜‐-―−－〜～]\s*(\d{1,2}):(\d{2})/g;
+const TIME_RE=/(\d{1,2}):(\d{2})\s*[~\-ー〜‐-―−－〜～一]\s*(\d{1,2}):(\d{2})/g;
 const SKIP_RE=/(https?:|www\.|@|\d{2,4}-\d{2,4}-\d{3,4}|〒|番地|丁目|振込|URL|ホームページ)/i;
 function collapseCJK(s){let p;do{p=s;s=s.replace(/([぀-ヿ一-鿿])\s(?=[぀-ヿ一-鿿](?:\s|$))/g,"$1")}while(s!==p);return s}
 function detectYM(text){const t=NK(text);let m;
@@ -626,7 +711,7 @@ function detectYM(text){const t=NK(text);let m;
   if((m=t.match(/(20\d{2})[\/.\-](\d{1,2})[\/.\-]\d{1,2}/)))return[Number(m[1]),Number(m[2])];
   if((m=t.match(/(\d{1,2})\s*月/))){const d=new Date();let y=d.getFullYear();const mo=Number(m[1]);if(mo<d.getMonth()+1-6)y++;return[y,mo]}
   return null}
-function parseSched(text){const lines=NK(text).split(/\r?\n/).map(l=>collapseCJK(l.replace(/\s+/g," ").trim())).filter(Boolean);
+function parseSched(text){const lines=NK(text).split(/\r?\n/).map(l=>collapseCJK(l.replace(/\s+/g," ").replace(/(\d)\s*:\s*(\d)/g,"$1:$2").replace(/(\d)\s+(?=\d{1,}:)/g,"$1").trim())).filter(Boolean);
   const ctxs=[];let cur=null;
   for(let line of lines){
     if(/^[※★◇◆■●]/.test(line)){cur=null;continue}
@@ -659,26 +744,44 @@ function parseSched(text){const lines=NK(text).split(/\r?\n/).map(l=>collapseCJK
   return rows}
 const ADULT=/高校|一般|大人|成人|以上|社会人|青年/;
 function openImport(){
-  modal(`<h3>予定表を読みこむ</h3><p>道場の予定表（PDF）をえらぶか、LINE などの予定の文章を貼りつけてください。</p>
-   <div class="acts"><label class="btn" for="impFile" style="cursor:pointer">PDFをえらぶ</label><input type="file" id="impFile" accept="application/pdf,.pdf" hidden></div>
+  modal(`<h3>予定表を読みこむ</h3><p>道場の予定表（PDF・写真・スクリーンショット）をえらぶか、LINE などの予定の文章を貼りつけてください。</p>
+   <div class="acts"><label class="btn" for="impFile" style="cursor:pointer">PDF・画像をえらぶ</label><input type="file" id="impFile" accept="application/pdf,.pdf,image/*" hidden></div>
    <label style="text-align:left;font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px">または 文章を貼りつけ<textarea id="impText" style="min-height:120px" placeholder="れい：&#10;12月6日(土) 18:00〜19:30 〇〇小学校&#10;12月7日(日) 10:00〜12:00 市民体育館"></textarea></label>
    <p id="impMsg" style="margin:0;min-height:1.2em;color:var(--shu)"></p>
-   <p style="font-size:12px;margin:0">読みとりは この端末の中だけで行います。先生の名前・電話番号・住所などは取りこみません。写真やスクリーンショットは読めないので、PDFか文章でお願いします。</p>
+   <p style="font-size:12px;margin:0">読みとりは この端末の中だけで行います。先生の名前・電話番号・住所などは取りこみません。画像は読みまちがいが出やすいので、登録する前に かならず確認してね。表をまっすぐ・明るく写すと よく読めます。</p>
    <div class="acts"><button type="button" class="btn sub" data-close>やめる</button><button type="button" class="btn" id="impGo">文章を読みとる</button></div>`,
   m=>{const msg=t=>m.querySelector("#impMsg").textContent=t;
     m.querySelector("#impGo").onclick=()=>{const t=m.querySelector("#impText").value;if(!t.trim()){msg("文章を貼りつけてね");return}
       const sh=decodeShare(t);if(sh){reviewImport("",sh.rows,sh.t);return}if(/KEIKO1:/.test(t)){msg("予定コードが こわれているようです。もう一度コピーしてね");return}reviewImport(t)};
     m.querySelector("#impFile").onchange=async e=>{const f=e.target.files[0];if(!f)return;
-      if(!/pdf$/i.test(f.type)&&!/\.pdf$/i.test(f.name)){msg("PDFファイルをえらんでください");return}
+      if(/^image\//.test(f.type)||/\.(jpe?g|png|webp|gif|heic)$/i.test(f.name)){e.target.value="";
+        msg("画像を読みとり中…");
+        try{const cr=await claudeImageRows(f).catch(err=>{if(err&&err.code&&err.code!=="images_unavailable"){throw err}return null});
+          if(cr){if(!cr.length){msg("予定が見つかりませんでした");return}reviewImport("",cr,"画像から読みとった予定");return}
+          const t=await ocrImageToText(f,(st,p)=>msg(st==="read"?`画像を読みとり中… ${Math.round(p*100)}%`:"読みとりの じゅんび中…（はじめてのときは少し時間がかかります）"));
+          if(t&&typeof t==="object"){if(!t.rows.length){msg("予定が見つかりませんでした。明るく まっすぐ写した画像でためしてね");return}reviewImport(t.head,t.rows,"画像から読みとった予定");return}
+          if(!t.replace(/[\s※]/g,"")){msg("文字が見つかりませんでした。明るく まっすぐ写した画像でためしてね");return}reviewImport(t)}
+        catch(err){const c=err&&err.code;msg(c==="not_granted"?"Claude の利用が許可されませんでした":c==="rate_limited"?"いまは混みあっています。少しあとで ためしてね":err&&err.message==="load"?"読みとりの部品を読みこめませんでした。ネットにつないでもう一度ためしてね":"この画像は読めませんでした")}
+        return}
+      if(!/pdf$/i.test(f.type)&&!/\.pdf$/i.test(f.name)){msg("PDFか画像ファイルをえらんでください");return}
       msg("読みとり中…");try{const t=await pdfToText(f);if(!t.replace(/[\s※]/g,"")){msg("文字が見つかりませんでした。写真をPDFにしたものは読めません");return}reviewImport(t)}
       catch(err){msg(err&&err.message==="load"?"読みとりの部品を読みこめませんでした。ネットにつないでもう一度ためしてね":"このPDFは読めませんでした")}}})}
-function reviewImport(text,pre,title){let ym=pre&&pre.length?[parse(pre[0].fixed).getFullYear(),parse(pre[0].fixed).getMonth()+1]:detectYM(text);if(!ym){const d=new Date();ym=[d.getFullYear(),d.getMonth()+1]}
+/* 読みまちがえた場所の名前を、前に登録したことのある場所に そろえる（例：左京地域体館→左京地域体育館） */
+function knownPlaces(){const all=[];for(const id of ROOT.order)for(const x of (ROOT.kids[id].schedule||[]))if(x.place)all.push(x.place);return[...new Set(all)]}
+function fixPlace(p){p=String(p||"").split(" ").filter(t=>[...t].length>=2).join(" ").trim();if(!p)return p;
+  const known=knownPlaces();if(known.includes(p))return p;
+  const bi=s=>{const a=[...s.replace(/\s/g,"")];const o=[];for(let i=0;i<a.length-1;i++)o.push(a[i]+a[i+1]);return o};
+  const P=bi(p);let best=null,bs=0;
+  for(const k of known){const K=bi(k);if(!K.length||!P.length)continue;const pool=[...K];let hit=0;for(const g of P){const i=pool.indexOf(g);if(i>=0){hit++;pool.splice(i,1)}}
+    const lr=Math.min(P.length,K.length)/Math.max(P.length,K.length);const sc=lr<0.75?0:2*hit/(P.length+K.length);if(sc>bs){bs=sc;best=k}}
+  return bs>=0.5?best:p}
+function reviewImport(text,pre,title){let ym=pre&&pre.length&&pre[0].fixed?[parse(pre[0].fixed).getFullYear(),parse(pre[0].fixed).getMonth()+1]:detectYM(text);if(!ym){const d=new Date();ym=[d.getFullYear(),d.getMonth()+1]}
   const raw=pre||parseSched(text);
   if(!raw.length){toast("予定が見つかりませんでした");return}
   const labels=[...new Set(raw.map(r=>r.label).filter(Boolean))];const on={};for(const l of labels)on[l]=!ADULT.test(l);
   const rows=raw.map(r=>Object.assign({use:true},r));
   const dateOf=r=>{if(r.fixed)return r.fixed;const mo=r.mo||ym[1];let y=ym[0];if(r.mo&&r.mo<ym[1]-6)y++;const dt=new Date(y,mo-1,r.d);return dt.getMonth()===mo-1?ymd(dt):""};
-  for(const r of rows){r.date=dateOf(r);if(!r.date)r.use=false;
+  for(const r of rows){r.place=fixPlace(r.place);r.note=String(r.note||"").split(" ").map(t=>t.replace(/^[・ー\s]+|[・ー\s]+$/g,"")).filter(t=>[...t].length>=2).join(" ");r.date=dateOf(r);if(!r.date)r.use=false;
     if(S.schedule.some(x=>occurs(x,r.date)&&x.start===r.start))r.use=false,r.dup=true}
   const inp='style="font:inherit;font-size:14px;padding:6px;border:2px solid var(--line);border-radius:8px;min-width:0"';
   const draw=m=>{const vis=rows.filter(r=>!r.label||on[r.label]);
@@ -689,7 +792,7 @@ function reviewImport(text,pre,title){let ym=pre&&pre.length?[parse(pre[0].fixed
        <input type="text" data-if="${i}:place" value="${esc(r.place)}" placeholder="場所" ${inp} class="grow"><input type="text" data-if="${i}:note" value="${esc(r.note)}" placeholder="メモ" ${inp} class="grow"></div></div>`}).join("");
     m.querySelector("#impCount").textContent=vis.filter(r=>r.use&&r.date).length};
   modal(`<h3>${pre?"送られてきた予定":"読みとった予定"}</h3>${title?`<p style="color:var(--ai);font-weight:900">${esc(title)}</p>`:""}<p>まちがいを直して、入れる予定にチェックをつけてください。</p>
-   <div class="row" style="justify-content:center" ${pre?"hidden":""}><label style="font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px;text-align:left">何年何月の予定表？<input type="month" id="impYM" value="${ym[0]}-${pad2(ym[1])}" style="font:inherit;padding:8px;border:2px solid var(--line);border-radius:10px"></label></div>
+   <div class="row" style="justify-content:center" ${pre&&pre.length&&pre[0].fixed?"hidden":""}><label style="font-size:13px;font-weight:700;color:var(--muted);display:flex;flex-direction:column;gap:4px;text-align:left">何年何月の予定表？<input type="month" id="impYM" value="${ym[0]}-${pad2(ym[1])}" style="font:inherit;padding:8px;border:2px solid var(--line);border-radius:10px"></label></div>
    ${labels.length?`<div style="text-align:left"><div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:6px">入れる時間わく（子どもの部だけ えらんでね）</div><div class="chips">${labels.map(l=>`<button type="button" class="chip red ${on[l]?"on":""}" data-il="${esc(l)}">${esc(l)}</button>`).join("")}</div></div>`:""}
    <div id="impRows" class="improws"></div>
    <div class="acts"><button type="button" class="btn sub" data-close>やめる</button><button type="button" class="btn" id="impSave"><span id="impCount">0</span>件を カレンダーに入れる</button></div>`,

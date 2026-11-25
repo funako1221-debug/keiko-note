@@ -1,5 +1,5 @@
 // けいこノート: オフラインでも開けるようにするキャッシュ
-const CACHE = "keiko-note-v4";
+const CACHE = "keiko-note-v5";
 const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
